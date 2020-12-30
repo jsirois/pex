@@ -10,6 +10,7 @@ import time
 from collections import namedtuple
 from contextlib import closing, contextmanager
 
+from pex import dist_metadata
 from pex.compatibility import (
     HTTPError,
     HTTPSHandler,
@@ -20,11 +21,24 @@ from pex.compatibility import (
 )
 from pex.network_configuration import NetworkConfiguration
 from pex.third_party.packaging.markers import Marker
+from pex.third_party.packaging.specifiers import SpecifierSet
+from pex.third_party.packaging.version import InvalidVersion, Version
 from pex.third_party.pkg_resources import Requirement, RequirementParseError
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from typing import BinaryIO, Dict, Iterator, Match, Optional, Text, Tuple, Union, Iterable
+    from typing import (
+        BinaryIO,
+        Dict,
+        FrozenSet,
+        Iterator,
+        Match,
+        Optional,
+        Text,
+        Tuple,
+        Union,
+        Iterable,
+    )
 
 
 class LogicalLine(
@@ -222,7 +236,19 @@ class Source(namedtuple("Source", ["origin", "is_file", "is_constraints", "lines
 
 
 class ReqInfo(
-    namedtuple("ReqInfo", ["line", "project_name", "url", "marker", "editable", "is_local_project"])
+    namedtuple(
+        "ReqInfo",
+        [
+            "line",
+            "project_name",
+            "url",
+            "extras",
+            "specifier",
+            "marker",
+            "editable",
+            "is_local_project",
+        ],
+    )
 ):
     @classmethod
     def create(
@@ -230,6 +256,8 @@ class ReqInfo(
         line,  # type: LogicalLine
         project_name=None,  # type: Optional[str]
         url=None,  # type: Optional[str]
+        extras=None,  # type: Optional[Iterable[str]]
+        specifier=None,  # type: Optional[SpecifierSet]
         marker=None,  # type: Optional[Marker]
         editable=False,  # type: bool
         is_local_project=False,  # type: bool
@@ -239,6 +267,8 @@ class ReqInfo(
             line=line,
             project_name=project_name,
             url=url,
+            extras=frozenset(extras or ()),
+            specifier=specifier,
             marker=marker,
             editable=editable,
             is_local_project=is_local_project,
@@ -250,6 +280,11 @@ class ReqInfo(
         return cast(LogicalLine, super(ReqInfo, self).line)
 
     @property
+    def key(self):
+        # type: () -> Optional[str]
+        return self.project_name.lower() if self.project_name else None
+
+    @property
     def project_name(self):
         # type: () -> Optional[str]
         return cast("Optional[str]", super(ReqInfo, self).project_name)
@@ -258,6 +293,16 @@ class ReqInfo(
     def url(self):
         # type: () -> Optional[str]
         return cast("Optional[str]", super(ReqInfo, self).url)
+
+    @property
+    def extras(self):
+        # type: () -> FrozenSet[str]
+        return cast("FrozenSet[str]", super(ReqInfo, self).extras)
+
+    @property
+    def specifier(self):
+        # type: () -> Optional[SpecifierSet]
+        return cast("Optional[SpecifierSet]", super(ReqInfo, self).specifier)
 
     @property
     def marker(self):
@@ -274,17 +319,25 @@ class ReqInfo(
         # type: () -> bool
         return cast(bool, super(ReqInfo, self).is_local_project)
 
-    def as_requirement(self):
-        # type: () -> Requirement
-        if self.project_name is None:
+    def as_requirement(self, wheel=None):
+        # type: (Optional[str]) -> Requirement
+        requirement = self.project_name
+        specifier = self.specifier
+        if wheel is not None:
+            project_name, specifier_set = _try_parse_project_name_and_specifier_from_path(
+                wheel, try_read_metadata=True
+            )
+            requirement = project_name
+            if not specifier:
+                specifier = specifier_set
+        if requirement is None:
             raise ValueError(
                 "Cannot create a requirement string with no project name for {}.".format(self)
             )
-        requirement = self.project_name
         if self.extras:
             requirement += "[" + ",".join(self.extras) + "]"
-        if self.specifier:
-            requirement += str(self.specifier)
+        if specifier:
+            requirement += str(specifier)
         if self.marker:
             requirement += ";" + str(self.marker)
         return Requirement.parse(requirement)
@@ -350,23 +403,41 @@ def _is_recognized_pip_url_scheme(scheme):
 
 
 def _try_parse_fragment_project_name_and_marker(fragment):
-    # type: (str) -> Tuple[Optional[str], Optional[Marker]]
+    # type: (str) -> Tuple[Optional[str], Optional[Iterable[str]], Optional[Marker]]
     project_requirement = None
     for part in fragment.split("&"):
         if part.startswith("egg="):
             _, project_requirement = part.split("=", 1)
             break
     if project_requirement is None:
-        return None, None
+        return None, None, None
     try:
         req = Requirement.parse(project_requirement)
-        return req.name, req.marker
+        return req.name, req.extras, req.marker
     except (RequirementParseError, ValueError):
-        return project_requirement, None
+        return project_requirement, None, None
 
 
-def _try_parse_project_name_from_path(path):
-    # type: (str) -> Optional[str]
+def _version_as_specifier(version):
+    # type: (str) -> SpecifierSet
+    try:
+        return SpecifierSet("=={}".format(Version(version)))
+    except InvalidVersion:
+        return SpecifierSet("==={}".format(version))
+
+
+def _try_parse_project_name_and_specifier_from_path(
+    path,  # type: str
+    try_read_metadata=False,  # type:bool
+):
+    # type: (...) -> Union[Tuple[str, SpecifierSet], Tuple[None, None]]
+    if try_read_metadata:
+        project_name_and_version = dist_metadata.project_name_and_version(path)
+        if project_name_and_version is not None:
+            return project_name_and_version.project_name, _version_as_specifier(
+                project_name_and_version.version
+            )
+
     fname = os.path.basename(path).strip()
 
     # Handle wheels:
@@ -374,26 +445,33 @@ def _try_parse_project_name_from_path(path):
     # The wheel filename convention is specified here:
     #   https://www.python.org/dev/peps/pep-0427/#file-name-convention.
     if fname.endswith(".whl"):
-        project_name, _ = fname.split("-", 1)
-        return project_name
+        project_name, version, _ = os.path.basename(path).split("-", 2)
+        return project_name, _version_as_specifier(version)
 
     # Handle sdists:
     #
-    # The sdist name format is specified here:
+    # The sdist name format has no specification yet, but there is a proposal here:
     #   https://www.python.org/dev/peps/pep-0625/#specification.
-    # We allow a few more legacy extensions.
-    if fname.endswith((".tar.gz", ".zip")):
-        project_name, _ = fname.rsplit("-", 1)
-        return project_name
+    #
+    # We do the best we can to support the current landscape. A version number can technically
+    # contain a dash though, even under the standards, in un-normalized form:
+    # https://www.python.org/dev/peps/pep-0440/#pre-release-separators. For those cases this logic
+    # will produce incorrect results and it does not seem there is much we can do.
+    if fname.endswith((".sdist", ".tar.gz", ".zip")):
+        fname, _ = os.path.splitext(fname)
+        if fname.endswith(".tar"):
+            fname, _ = os.path.splitext(fname)
+        project_name, version = fname.rsplit("-", 1)
+        return project_name, _version_as_specifier(version)
 
-    return None
+    return None, None
 
 
 def _try_parse_pip_local_formats(
     path,  # type: str
     basepath=None,  # type: Optional[str]
 ):
-    # type: (...) -> Tuple[Optional[str], Optional[Marker]]
+    # type: (...) -> Tuple[Optional[str], Optional[Iterable[str]], Optional[Marker]]
     project_requirement = os.path.basename(path)
 
     # Requirements strings can optionally include:
@@ -422,7 +500,7 @@ def _try_parse_pip_local_formats(
         re.VERBOSE,
     )
     if not match:
-        return None, None
+        return None, None, None
 
     directory_name, requirement_parts = match.groups()
     stripped_path = os.path.join(os.path.dirname(path), directory_name)
@@ -430,23 +508,23 @@ def _try_parse_pip_local_formats(
         os.path.join(basepath, stripped_path) if basepath else os.path.abspath(stripped_path)
     )
     if not os.path.exists(abs_stripped_path):
-        return None, None
+        return None, None, None
 
     if not os.path.isdir(abs_stripped_path):
         # Maybe a local archive path.
-        return abs_stripped_path, None
+        return abs_stripped_path, None, None
 
     # Maybe a local project path.
     requirement_parts = match.group("requirement_parts")
     if not requirement_parts:
-        return abs_stripped_path, None
+        return abs_stripped_path, None, None
 
     project_requirement = "fake_project{}".format(requirement_parts)
     try:
         req = Requirement.parse(project_requirement)
-        return abs_stripped_path, req.marker
+        return abs_stripped_path, req.extras, req.marker
     except (RequirementParseError, ValueError):
-        return None, None
+        return None, None, None
 
 
 def _split_direct_references(processed_text):
@@ -470,29 +548,47 @@ def _parse_requirement_line(
     # Handle urls (Pip proprietary).
     parsed_url = urlparse.urlparse(processed_text)
     if _is_recognized_pip_url_scheme(parsed_url.scheme):
-        project_name, marker = _try_parse_fragment_project_name_and_marker(parsed_url.fragment)
+        project_name, extras, marker = _try_parse_fragment_project_name_and_marker(
+            parsed_url.fragment
+        )
+        specifier = None  # type: Optional[SpecifierSet]
         if not project_name:
-            project_name = _try_parse_project_name_from_path(parsed_url.path)
+            is_local_file = parsed_url.scheme == "file"
+            project_name, specifier = _try_parse_project_name_and_specifier_from_path(
+                parsed_url.path, try_read_metadata=is_local_file
+            )
         url = parsed_url._replace(fragment="").geturl()
         return ReqInfo.create(
-            line, project_name=project_name, url=url, marker=marker, editable=editable
+            line,
+            project_name=project_name,
+            url=url,
+            extras=extras,
+            specifier=specifier,
+            marker=marker,
+            editable=editable,
         )
 
     # Handle local archives and project directories (Pip proprietary).
-    maybe_abs_path, marker = _try_parse_pip_local_formats(processed_text, basepath=basepath)
+    maybe_abs_path, extras, marker = _try_parse_pip_local_formats(processed_text, basepath=basepath)
     if maybe_abs_path is not None and any(
         os.path.isfile(os.path.join(maybe_abs_path, *p))
         for p in ((), ("setup.py",), ("pyproject.toml",))
     ):
         archive_or_project_path = os.path.realpath(maybe_abs_path)
         is_local_project = os.path.isdir(archive_or_project_path)
-        project_name = (
-            None if is_local_project else _try_parse_project_name_from_path(archive_or_project_path)
+        project_name, specifier = (
+            (None, None)
+            if is_local_project
+            else _try_parse_project_name_and_specifier_from_path(
+                archive_or_project_path, try_read_metadata=True
+            )
         )
         return ReqInfo.create(
             line,
             project_name=project_name,
             url=archive_or_project_path,
+            extras=extras,
+            specifier=specifier,
             marker=marker,
             editable=editable,
             is_local_project=is_local_project,
@@ -510,6 +606,8 @@ def _parse_requirement_line(
             line,
             project_name=req.name,
             url=direct_reference_url or req.url,
+            extras=req.extras,
+            specifier=req.specifier,
             marker=req.marker,
             editable=editable,
         )
