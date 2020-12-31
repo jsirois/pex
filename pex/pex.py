@@ -23,9 +23,9 @@ from pex.inherit_path import InheritPath
 from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
 from pex.pex_info import PexInfo
-from pex.third_party.pkg_resources import EntryPoint, WorkingSet, find_distributions
+from pex.third_party.pkg_resources import Distribution, EntryPoint, WorkingSet, find_distributions
 from pex.tracer import TRACER
-from pex.typing import TYPE_CHECKING
+from pex.typing import TYPE_CHECKING, cast
 from pex.util import iter_pth_paths, named_temporary_file
 from pex.variables import ENV, Variables
 
@@ -79,7 +79,7 @@ class PEX(object):  # noqa: T000
         self._pex_info_overrides = PexInfo.from_env(env=env)
         self._vars = env
         self._envs = []  # type: List[PEXEnvironment]
-        self._working_set = None  # type: Optional[WorkingSet]
+        self._working_set = None  # type: Optional[Iterable[Distribution]]
         if verify_entry_point:
             self._do_entry_point_verification()
 
@@ -96,7 +96,7 @@ class PEX(object):  # noqa: T000
         return self._interpreter
 
     def _activate(self):
-        # type: () -> WorkingSet
+        # type: () -> Iterable[Distribution]
         working_set = WorkingSet([])
 
         # set up the local .pex environment
@@ -122,10 +122,11 @@ class PEX(object):  # noqa: T000
         # (i.e. PEX_PATH) has been merged into the environment
         PEXEnvironment.declare_namespace_packages(working_set)
         self.patch_pkg_resources(working_set)
-        return working_set
+        # TODO(John Sirois): XXX: Eliminate or push down WorkingSet?
+        return cast("Iterable[Distribution]", working_set)
 
     def activate(self):
-        # type: () -> WorkingSet
+        # type: () -> Iterable[Distribution]
         if not self._working_set:
             # 1. Scrub the sys.path to present a minimal Python environment.
             self.patch_sys()

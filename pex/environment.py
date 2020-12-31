@@ -19,13 +19,28 @@ from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
 from pex.pex_info import PexInfo
 from pex.third_party.packaging import tags
-from pex.third_party.pkg_resources import DistributionNotFound, Environment, Requirement, WorkingSet
+from pex.third_party.pkg_resources import (
+    Distribution,
+    DistributionNotFound,
+    Environment,
+    Requirement,
+)
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper, DistributionHelper
 
 if TYPE_CHECKING:
-    from typing import Container, Iterator, Optional, Tuple, Iterable
+    from typing import (
+        Container,
+        DefaultDict,
+        Iterable,
+        List,
+        Optional,
+        Tuple,
+        Iterable,
+        Iterator,
+        Set,
+    )
 
 
 def _import_pkg_resources():
@@ -42,7 +57,7 @@ def _import_pkg_resources():
         return pkg_resources, True
 
 
-class PEXEnvironment(Environment):
+class PEXEnvironment(object):
     class _CachingZipImporter(object):
         class _CachingLoader(object):
             def __init__(self, delegate):
@@ -226,8 +241,10 @@ class PEXEnvironment(Environment):
         self._pex = pex
         self._pex_info = pex_info or PexInfo.from_pex(pex)
         self._internal_cache = os.path.join(self._pex, self._pex_info.internal_cache)
-        self._activated = False
-        self._working_set = None
+        self._working_set = None  # type: Optional[Iterable[Distribution]]
+        self._available_distributions = defaultdict(
+            list
+        )  # type: DefaultDict[str, List[Distribution]]
         self._interpreter = interpreter or PythonInterpreter.get()
         self._inherit_path = self._pex_info.inherit_path
         self._supported_tags = frozenset(self._interpreter.identity.supported_tags)
@@ -238,12 +255,9 @@ class PEXEnvironment(Environment):
         if self._interpreter.identity.python_tag.startswith("pp") and zipfile.is_zipfile(self._pex):
             self._install_pypy_zipimporter_workaround(self._pex)
 
-        super(PEXEnvironment, self).__init__(
-            search_path=[] if self._pex_info.inherit_path == InheritPath.FALSE else sys.path,
-            platform=self._interpreter.identity.platform_tag,
-        )
         TRACER.log(
-            "E: tags for %r x %r -> %s" % (self.platform, self._interpreter, self._supported_tags),
+            "E: tags for %r x %r -> %s"
+            % (self._interpreter.identity.platform_tag, self._interpreter, self._supported_tags),
             V=9,
         )
 
@@ -251,7 +265,7 @@ class PEXEnvironment(Environment):
         for dist in distribution_iter:
             if self.can_add(dist):
                 with TRACER.timed("Adding %s" % dist, V=2):
-                    self.add(dist)
+                    self._available_distributions[dist.key].append(dist)
 
     def can_add(self, dist):
         filename, ext = os.path.splitext(os.path.basename(dist.location))
@@ -279,46 +293,57 @@ class PEXEnvironment(Environment):
         return self._interpreter.identity.version_str in python_requires
 
     def activate(self):
-        if not self._activated:
+        # type: () -> Iterable[Distribution]
+        if self._working_set is None:
             with TRACER.timed("Activating PEX virtual environment from %s" % self._pex):
                 self._working_set = self._activate()
-            self._activated = True
-
         return self._working_set
 
-    def _resolve(self, working_set, reqs):
-        environment = self._target_interpreter_env.copy()
-        environment["extra"] = list(set(itertools.chain(*(req.extras for req in reqs))))
-
-        reqs_by_key = OrderedDict()
-        for req in reqs:
-            if req.marker and not req.marker.evaluate(environment=environment):
+    def _resolve_one(
+        self,
+        req,  # type: Requirement
+        extras=None,  # type: Optional[Set[str]]
+        required_by=None,  # type: Optional[Distribution]
+    ):
+        # type: (...) -> Iterator[Distribution]
+        if req.marker:
+            environment = self._target_interpreter_env.copy()
+            environment["extra"] = list(extras) if extras else []
+            if not req.marker.evaluate(environment=environment):
                 TRACER.log(
-                    "Skipping activation of `%s` due to environment marker de-selection" % req
+                    "Skipping activation of `{}` due to environment marker de-selection".format(req)
                 )
-                continue
-            reqs_by_key.setdefault(req.key, []).append(req)
+                return
 
-        unresolved_reqs = OrderedDict()
+        available = self._available_distributions.get(req.key)
+        if not available:
+            raise DistributionNotFound(req, [required_by.project_name] if required_by else None)
+
+        for dist in available:
+            # TODO(John Sirois): XXX: Either fail, or - more likely - rank available and return
+            #  highest rank.
+            for requirement in dist_metadata.requires_dists(dist):
+                for d in self._resolve_one(requirement, extras=req.extras, required_by=dist):
+                    yield d
+            yield dist
+
+    def _resolve(self, reqs):
+        # type: (Iterable[Requirement]) -> Iterable[Distribution]
+        unresolved_reqs = OrderedDict()  # type: OrderedDict[Requirement, OrderedSet]
         resolveds = OrderedSet()
 
         # Resolve them one at a time so that we can figure out which ones we need to elide should
         # there be an interpreter incompatibility.
-        for key, reqs in reqs_by_key.items():
-            with TRACER.timed("Resolving {} from {}".format(key, reqs), V=2):
-                # N.B.: We resolve the bare requirement with no version specifiers since the resolve process
-                # used to build this pex already did so. There may be multiple distributions satisfying any
-                # particular key (e.g.: a Python 2 specific version and a Python 3 specific version for a
-                # multi-python PEX) and we want the working set to pick the most appropriate one.
-                req = Requirement.parse(key)
+        for req in reqs:
+            with TRACER.timed("Resolving {}".format(req), V=2):
                 try:
-                    resolveds.update(working_set.resolve([req], env=self))
+                    resolveds.update(self._resolve_one(req))
                 except DistributionNotFound as e:
                     TRACER.log("Failed to resolve a requirement: %s" % e)
                     requirers = unresolved_reqs.setdefault(e.req, OrderedSet())
                     if e.requirers:
                         for requirer in e.requirers:
-                            requirers.update(reqs_by_key[requirer])
+                            requirers.update(requirer)
 
         if unresolved_reqs:
             TRACER.log("Unresolved requirements:")
@@ -326,7 +351,7 @@ class PEXEnvironment(Environment):
                 TRACER.log("  - %s" % req)
 
             TRACER.log("Distributions contained within this pex:")
-            distributions_by_key = defaultdict(list)
+            distributions_by_key = defaultdict(list)  # type: DefaultDict[str, List[Distribution]]
             if not self._pex_info.distributions:
                 TRACER.log("  None")
             else:
@@ -335,7 +360,9 @@ class PEXEnvironment(Environment):
                     distribution = DistributionHelper.distribution_from_path(
                         path=os.path.join(self._pex_info.install_cache, dist_digest, dist_name)
                     )
-                    distributions_by_key[distribution.as_requirement().key].append(distribution)
+                    # TODO(John Sirois): XXX: Raise exception with good message.
+                    if distribution is not None:
+                        distributions_by_key[distribution.as_requirement().key].append(distribution)
 
             if not self._pex_info.ignore_errors:
                 items = []
@@ -434,7 +461,7 @@ class PEXEnvironment(Environment):
                 pkg_resources.declare_namespace(pkg)
 
     def _activate(self):
-        # type: () -> WorkingSet
+        # type: () -> Iterable[Distribution]
         pex_file = os.path.realpath(self._pex)
 
         self._update_candidate_distributions(self._load_internal_cache(pex_file, self._pex_info))
@@ -455,14 +482,9 @@ class PEXEnvironment(Environment):
             sys.path.insert(0, pex_file)
 
         all_reqs = [Requirement.parse(req) for req in self._pex_info.requirements]
-
-        working_set = WorkingSet([])
-        resolved = self._resolve(working_set, all_reqs)
-
+        resolved = self._resolve(all_reqs)
         for dist in resolved:
             with TRACER.timed("Activating %s" % dist, V=2):
-                working_set.add(dist)
-
                 if self._inherit_path == InheritPath.FALLBACK:
                     # Prepend location to sys.path.
                     #
@@ -481,5 +503,4 @@ class PEXEnvironment(Environment):
 
                 with TRACER.timed("Adding sitedir", V=2):
                     site.addsitedir(dist.location)
-
-        return working_set
+        return resolved
