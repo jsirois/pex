@@ -299,21 +299,36 @@ class PEXEnvironment(object):
                 self._working_set = self._activate()
         return self._working_set
 
+    def _evaluate_marker(
+        self,
+        requirement,  # type: Requirement
+        extras=None,  # type: Optional[Tuple[str, ...]]
+    ):
+        # type: (...) -> bool
+        if not requirement.marker:
+            return True
+        if not extras:
+            # Provide an empty extra to safely evaluate the markers without matching any extra.
+            extras = ("",)
+        for extra in extras:
+            environment = self._target_interpreter_env.copy()
+            environment["extra"] = extra
+            if requirement.marker.evaluate(environment=environment):
+                return True
+        return False
+
     def _resolve_one(
         self,
         req,  # type: Requirement
-        extras=None,  # type: Optional[Set[str]]
+        extras=None,  # type: Optional[Tuple[str, ...]]
         required_by=None,  # type: Optional[Distribution]
     ):
         # type: (...) -> Iterator[Distribution]
-        if req.marker:
-            environment = self._target_interpreter_env.copy()
-            environment["extra"] = list(extras) if extras else []
-            if not req.marker.evaluate(environment=environment):
-                TRACER.log(
-                    "Skipping activation of `{}` due to environment marker de-selection".format(req)
-                )
-                return
+        if not self._evaluate_marker(req, extras=extras):
+            TRACER.log(
+                "Skipping activation of `{}` due to environment marker de-selection.".format(req)
+            )
+            return
 
         available = self._available_distributions.get(req.key)
         if not available:
