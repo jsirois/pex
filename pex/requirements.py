@@ -19,6 +19,7 @@ from pex.compatibility import (
     to_unicode,
     urlparse,
 )
+from pex.dist_metadata import MetadataError, ProjectNameAndVersion
 from pex.network_configuration import NetworkConfiguration
 from pex.third_party.packaging.markers import Marker
 from pex.third_party.packaging.specifiers import SpecifierSet
@@ -431,39 +432,16 @@ def _try_parse_project_name_and_specifier_from_path(
     try_read_metadata=False,  # type:bool
 ):
     # type: (...) -> Union[Tuple[str, SpecifierSet], Tuple[None, None]]
-    if try_read_metadata:
-        project_name_and_version = dist_metadata.project_name_and_version(path)
-        if project_name_and_version is not None:
-            return project_name_and_version.project_name, _version_as_specifier(
-                project_name_and_version.version
-            )
-
-    fname = os.path.basename(path).strip()
-
-    # Handle wheels:
-    #
-    # The wheel filename convention is specified here:
-    #   https://www.python.org/dev/peps/pep-0427/#file-name-convention.
-    if fname.endswith(".whl"):
-        project_name, version, _ = os.path.basename(path).split("-", 2)
-        return project_name, _version_as_specifier(version)
-
-    # Handle sdists:
-    #
-    # The sdist name format has no specification yet, but there is a proposal here:
-    #   https://www.python.org/dev/peps/pep-0625/#specification.
-    #
-    # We do the best we can to support the current landscape. A version number can technically
-    # contain a dash though, even under the standards, in un-normalized form:
-    # https://www.python.org/dev/peps/pep-0440/#pre-release-separators. For those cases this logic
-    # will produce incorrect results and it does not seem there is much we can do.
-    if fname.endswith((".sdist", ".tar.gz", ".zip")):
-        fname, _ = os.path.splitext(fname)
-        if fname.endswith(".tar"):
-            fname, _ = os.path.splitext(fname)
-        project_name, version = fname.rsplit("-", 1)
-        return project_name, _version_as_specifier(version)
-
+    try:
+        name_and_version = (
+            dist_metadata.project_name_and_version(path, fallback_to_filename=True)
+            if try_read_metadata
+            else ProjectNameAndVersion.from_filename(path)
+        )
+        if name_and_version is not None:
+            return name_and_version.project_name, _version_as_specifier(name_and_version.version)
+    except MetadataError:
+        pass
     return None, None
 
 
