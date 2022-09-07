@@ -8,6 +8,7 @@ from textwrap import dedent
 
 from pex.common import safe_mkdir, safe_open, temporary_dir, touch
 from pex.compatibility import to_bytes
+from pex.fs import safe_rename
 from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.typing import TYPE_CHECKING, cast
@@ -71,10 +72,10 @@ def test_dir_hash():
             fp.write("contents2")
         hash1 = CacheHelper.dir_hash(tmp_dir)
 
-        os.rename(os.path.join(tmp_dir, "c"), os.path.join(tmp_dir, "c-renamed"))
+        safe_rename(os.path.join(tmp_dir, "c"), os.path.join(tmp_dir, "c-renamed"))
         assert hash1 != CacheHelper.dir_hash(tmp_dir)
 
-        os.rename(os.path.join(tmp_dir, "c-renamed"), os.path.join(tmp_dir, "c"))
+        safe_rename(os.path.join(tmp_dir, "c-renamed"), os.path.join(tmp_dir, "c"))
         assert hash1 == CacheHelper.dir_hash(tmp_dir)
 
         touch(os.path.join(tmp_dir, "c", "d", "e.pyc"))

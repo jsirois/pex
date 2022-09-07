@@ -9,7 +9,15 @@ from textwrap import dedent
 from colors import cyan
 
 from pex.common import filter_pyc_files, safe_open
-from pex.testing import IntegResults, make_env, run_pex_command
+from pex.testing import (
+    IntegResults,
+    make_env,
+    pex_call,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper
 from pex.venv.virtualenv import Virtualenv
@@ -21,7 +29,7 @@ if TYPE_CHECKING:
 def run_pex_tools(*args):
     # type: (*str) -> IntegResults
 
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[sys.executable, "-mpex.tools"] + list(args),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -101,7 +109,7 @@ def test_collisions(
         "PEXWarning: Encountered collision building venv at {venv_dir} from {pex}:\n"
         "1. {venv_dir}/bin/pex was provided by:".format(venv_dir=venv_dir, pex=collisions_pex)
     ) in result.error
-    assert 42 == subprocess.call(args=[Virtualenv(venv_dir=venv_dir).bin_path("pex")])
+    assert 42 == pex_call(args=[Virtualenv(venv_dir=venv_dir).bin_path("pex")])
 
 
 def test_collisions_mergeable_issue_1570(tmpdir):
@@ -184,15 +192,13 @@ def test_scope_issue_1631(tmpdir):
         *args  # type: str
     ):
         # type: (...) -> None
-        subprocess.check_call(
-            args=[app_pex, "venv", venv_dir] + list(args), env=make_env(PEX_TOOLS=1)
-        )
+        pex_check_call(args=[app_pex, "venv", venv_dir] + list(args), env=make_env(PEX_TOOLS=1))
 
     def assert_app(venv_dir):
         # type: (str) -> Virtualenv
         assert (
             cyan("Colluphid: Cupitt or Dawkins?")
-            == subprocess.check_output(args=[os.path.join(venv_dir, "pex")]).decode("utf-8").strip()
+            == pex_check_output(args=[os.path.join(venv_dir, "pex")]).decode("utf-8").strip()
         )
         return Virtualenv(venv_dir)
 

@@ -8,7 +8,14 @@ from textwrap import dedent
 import pytest
 
 from pex.common import safe_open, temporary_dir
-from pex.testing import PY27, ensure_python_venv, make_env, run_pex_command
+from pex.testing import (
+    PY27,
+    ensure_python_venv,
+    make_env,
+    pex_check_call,
+    pex_check_output,
+    run_pex_command,
+)
 
 
 def test_extras_isolation():
@@ -16,7 +23,7 @@ def test_extras_isolation():
     # Here we ensure one of our extras, `subprocess32`, is properly isolated in the transition from
     # pex bootstrapping where it is imported by `pex.executor` to execution of user code.
     python, pip = ensure_python_venv(PY27)
-    subprocess.check_call([pip, "install", "subprocess32"])
+    pex_check_call([pip, "install", "subprocess32"])
     with temporary_dir() as td:
         src_dir = os.path.join(td, "src")
         with safe_open(os.path.join(src_dir, "test_issues_745.py"), "w") as fp:
@@ -45,7 +52,7 @@ def test_extras_isolation():
         # The pex runtime should scrub subprocess32 since it comes from site-packages and so we should
         # not have access to it.
         with pytest.raises(subprocess.CalledProcessError):
-            subprocess.check_call([python, pex_file])
+            pex_check_call([python, pex_file])
 
         # But if the pex has a declared dependency on subprocess32 we should be able to find the
         # subprocess32 bundled into the pex.
@@ -61,7 +68,7 @@ def test_extras_isolation():
             python=python,
         )
 
-        output = subprocess.check_output([python, pex_file], env=make_env(PEX_ROOT=pex_root))
+        output = pex_check_output([python, pex_file], env=make_env(PEX_ROOT=pex_root))
 
         subprocess32_location = os.path.realpath(output.decode("utf-8").strip())
         assert subprocess32_location.startswith(pex_root)

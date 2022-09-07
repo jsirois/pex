@@ -15,9 +15,10 @@ import pytest
 
 from pex import resolver
 from pex.common import safe_mkdir, safe_open, temporary_dir
-from pex.compatibility import PY2, WINDOWS, to_bytes
+from pex.compatibility import PY2, to_bytes
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
+from pex.os import WINDOWS
 from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
@@ -29,6 +30,7 @@ from pex.testing import (
     environment_as,
     install_wheel,
     make_bdist,
+    pex_check_output,
     run_simple_pex,
     run_simple_pex_test,
     temporary_content,
@@ -209,7 +211,6 @@ def test_site_libs():
         assert site_packages in site_libs
 
 
-@pytest.mark.skipif(WINDOWS, reason="No symlinks on windows")
 def test_site_libs_symlink():
     # type: () -> None
     with mock.patch.object(
@@ -335,7 +336,7 @@ class PythonpathIsolationTest(object):
             assert expected_output == stdout.decode("utf-8")
 
             # Test direct PEX execution.
-            assert expected_output == subprocess.check_output(
+            assert expected_output == pex_check_output(
                 [sys.executable, pex_builder.path()], env=env
             ).decode("utf-8")
 
@@ -437,7 +438,7 @@ def test_pex_executable():
                     import sys
                     import my_package
                     path = os.path.join(os.path.dirname(my_package.__file__), 'bin/start.sh')
-                    sys.stdout.write(subprocess.check_output([path]).decode('utf-8'))      
+                    sys.stdout.write(pex_check_output([path]).decode('utf-8'))      
                     """
                 )
             )
@@ -875,7 +876,7 @@ def test_interpreter_teardown_dev_null_unclosed_resource_warning_suppressed():
         pex_builder = PEXBuilder(path=pex_chroot)
         pex_builder.freeze()
 
-        output = subprocess.check_output(
+        output = pex_check_output(
             args=[sys.executable, "-W", "error::ResourceWarning", pex_chroot, "-c", ""],
             stderr=subprocess.STDOUT,
         )

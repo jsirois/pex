@@ -4,11 +4,10 @@
 
 import os.path
 import platform
-import subprocess
 import sys
 
 from pex.common import safe_rmtree
-from pex.testing import make_env, run_pex_command
+from pex.testing import make_env, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,7 +39,7 @@ def test_unicode_script_shebang_rewrite_docutils(tmpdir):
     ).assert_success()
 
     safe_rmtree(pex_root)
-    output = subprocess.check_output(args=[docutils_pex, "-V"], env=env)
+    output = pex_check_output(args=[docutils_pex, "-V"], env=env)
     assert "rst2html5.py (Docutils 0.17.1 [release], Python {version}, on {platform})\n".format(
         version=platform.python_version(), platform=sys.platform
     ) == output.decode("utf-8")

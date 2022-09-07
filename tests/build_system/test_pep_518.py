@@ -2,7 +2,6 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 from textwrap import dedent
 
 from pex.build_system import pep_518
@@ -14,6 +13,7 @@ from pex.pip.version import PipVersion
 from pex.resolve.configured_resolver import ConfiguredResolver
 from pex.resolve.resolver_configuration import PipConfiguration
 from pex.result import Error
+from pex.testing import pex_check_call
 from pex.typing import TYPE_CHECKING
 from pex.variables import ENV
 
@@ -73,7 +73,7 @@ def test_load_build_system_pyproject(
         for dist in PEXEnvironment.mount(build_system.venv_pex.pex).resolve()
     }
     assert ProjectName("flit_core") in dists
-    subprocess.check_call(
+    pex_check_call(
         args=[build_system.venv_pex.pex, "-c", "import {}".format(build_system.build_backend)]
     )
 

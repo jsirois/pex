@@ -3,12 +3,11 @@
 
 import os
 import shutil
-import subprocess
 from textwrap import dedent
 
 import pytest
 
-from pex.testing import IS_LINUX, IS_MAC, PY_VER, run_pex_command
+from pex.testing import IS_LINUX, IS_MAC, PY_VER, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -74,7 +73,7 @@ def test_hermetic_console_scripts(tmpdir):
 
     shutil.rmtree(pex_root)
     # This should no-op (since there is no proto sent on stdin) and exit success.
-    subprocess.check_call(
+    pex_check_call(
         args=[
             mypy_protobuf_pex,
             "-c",
@@ -84,7 +83,7 @@ def test_hermetic_console_scripts(tmpdir):
                 import sys
 
 
-                process = subprocess.Popen(['protoc-gen-mypy'], stdin=subprocess.PIPE)
+                process = pex_popen(['protoc-gen-mypy'], stdin=subprocess.PIPE)
                 process.communicate()
                 sys.exit(process.returncode)
                 """

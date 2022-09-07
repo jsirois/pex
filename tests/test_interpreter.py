@@ -5,7 +5,6 @@ import glob
 import json
 import os
 import re
-import subprocess
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
@@ -17,6 +16,7 @@ from pex import interpreter
 from pex.common import chmod_plus_x, safe_mkdir, safe_mkdtemp, temporary_dir, touch
 from pex.compatibility import PY3
 from pex.executor import Executor
+from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.jobs import Job
 from pex.pyenv import Pyenv
@@ -30,6 +30,7 @@ from pex.testing import (
     ensure_python_interpreter,
     ensure_python_venv,
     environment_as,
+    pex_check_call,
     pushd,
 )
 from pex.typing import TYPE_CHECKING
@@ -299,13 +300,13 @@ class TestPythonInterpreter(object):
             # should be re-read and found invalid.
             py37_version_dir = os.path.dirname(os.path.dirname(py37))
             py37_deleted = "{}.uninstalled".format(py37_version_dir)
-            os.rename(py37_version_dir, py37_deleted)
+            safe_rename(py37_version_dir, py37_deleted)
             try:
                 assert_shim_inactive("python")
                 assert_shim_inactive("python3")
                 assert_shim_inactive("python3.7")
             finally:
-                os.rename(py37_deleted, py37_version_dir)
+                safe_rename(py37_deleted, py37_version_dir)
 
             assert_shim("python", py37)
 
@@ -341,7 +342,7 @@ def test_detect_pyvenv(tmpdir):
         real_interpreter.execute(["-c", "import colors"])
 
     venv_bin_dir = os.path.join(venv, "bin")
-    subprocess.check_call([os.path.join(venv_bin_dir, "pip"), "install", "ansicolors==1.1.8"])
+    pex_check_call([os.path.join(venv_bin_dir, "pip"), "install", "ansicolors==1.1.8"])
 
     canonical_to_python = defaultdict(set)
     for python in glob.glob(os.path.join(venv_bin_dir, "python*")):
@@ -413,7 +414,7 @@ def test_identify_cwd_isolation_issues_1231(tmpdir):
 
     python37, pip = ensure_python_venv(PY37)
     polluted_cwd = os.path.join(str(tmpdir), "dir")
-    subprocess.check_call(args=[pip, "install", "--target", polluted_cwd, "pex==2.1.16"])
+    pex_check_call(args=[pip, "install", "--target", polluted_cwd, "pex==2.1.16"])
 
     pex_root = os.path.join(str(tmpdir), "pex_root")
     with pushd(polluted_cwd), ENV.patch(PEX_ROOT=pex_root):

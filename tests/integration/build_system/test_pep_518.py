@@ -2,14 +2,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 
 from pex.build_system.pep_518 import BuildSystem, load_build_system
 from pex.pip.version import PipVersion
 from pex.resolve.configured_resolver import ConfiguredResolver
 from pex.resolve.resolver_configuration import PipConfiguration, ReposConfiguration
 from pex.targets import LocalInterpreter
-from pex.testing import make_env, run_pex_command
+from pex.testing import make_env, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -40,7 +39,7 @@ def test_load_build_system_pyproject_custom_repos(
     ).assert_success()
 
     find_links = os.path.join(str(tmpdir), "find_links")
-    subprocess.check_call(
+    pex_check_call(
         args=[repository_pex, "repository", "extract", "--find-links", find_links],
         env=make_env(PEX_TOOLS=1),
     )
@@ -52,6 +51,6 @@ def test_load_build_system_pyproject_custom_repos(
     )
     build_system = load_build_system(custom_resolver, pex_project_dir)
     assert isinstance(build_system, BuildSystem)
-    subprocess.check_call(
+    pex_check_call(
         args=[build_system.venv_pex.pex, "-c", "import {}".format(build_system.build_backend)]
     )

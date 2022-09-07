@@ -20,6 +20,7 @@ from pex.finders import get_entry_point_from_console_script, get_script_from_dis
 from pex.inherit_path import InheritPath
 from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
+from pex.os import safe_execv
 from pex.pex_info import PexInfo
 from pex.targets import LocalInterpreter
 from pex.tracer import TRACER
@@ -676,7 +677,7 @@ class PEX(object):  # noqa: T000
                 cmdline=" ".join(cmdline)
             )
         )
-        os.execv(python, cmdline)
+        safe_execv(cmdline)
 
     def execute_script(self, script_name):
         # type: (str) -> Any

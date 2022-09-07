@@ -36,6 +36,8 @@ from pex.testing import (
     built_wheel,
     ensure_python_interpreter,
     make_env,
+    pex_check_output,
+    pex_popen,
     run_pex_command,
 )
 from pex.typing import TYPE_CHECKING
@@ -207,15 +209,13 @@ def test_create_vcs(
     run_pex_command(args=["--lock", lock, "-o", pex_file], python=python).assert_success()
 
     version_output = (
-        subprocess.check_output(
-            args=[python, pex_file, "--version"], env=make_env(PEX_SCRIPT="cowsay")
-        )
+        pex_check_output(args=[python, pex_file, "--version"], env=make_env(PEX_SCRIPT="cowsay"))
         .decode("utf-8")
         .strip()
     )
     assert "3.0" == version_output, version_output
 
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[python, pex_file, "-V"],
         env=make_env(PEX_SCRIPT="pex"),
         stdout=subprocess.PIPE,

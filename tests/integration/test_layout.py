@@ -2,14 +2,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 
 import pytest
 
 from pex.common import safe_open, safe_rmtree
 from pex.layout import Layout
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -56,7 +55,7 @@ def test_resiliency(
 
     def assert_exe(*args):
         # type: (*str) -> None
-        output = subprocess.check_output(args=args)
+        output = pex_check_output(args=args)
         assert b"1.1.8\n" == output
 
     executable = pex_app if layout == Layout.ZIPAPP else os.path.join(pex_app, "__main__.py")

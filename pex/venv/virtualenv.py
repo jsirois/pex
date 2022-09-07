@@ -7,17 +7,22 @@ import logging
 import os
 import pkgutil
 import re
-from fileinput import FileInput
-
 import sys
 from contextlib import closing
-from pex.common import AtomicDirectory, is_exe, safe_mkdir
+from fileinput import FileInput
+
+from pex.atomic_directory import AtomicDirectory
+from pex.common import is_exe, safe_mkdir
 from pex.compatibility import get_stdout_bytes_buffer
-from pex.dist_metadata import find_distributions, Distribution
+from pex.dist_metadata import Distribution, find_distributions
+from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
+from pex.os import WINDOWS
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
+from pex.ziputils import Zip
 
 if TYPE_CHECKING:
     from typing import Iterator, Optional, Tuple, Union
@@ -88,6 +93,9 @@ def find_site_packages_dir(
         and interpreter.version[:2] <= (3, 7)
     ):
         site_packages_dir = os.path.join(venv_dir, "site-packages")
+    elif WINDOWS:
+        # TODO(John Sirois): encapsulate in pex.sysconfig.
+        site_packages_dir = os.path.join(venv_dir, "Lib", "site-packages")
     else:
         site_packages_dir = os.path.join(
             venv_dir,
@@ -109,6 +117,25 @@ def find_site_packages_dir(
 
 
 class Virtualenv(object):
+    @staticmethod
+    def rewrite_windows_script(
+        script,  # type: str
+        shebang_bytes,  # type: bytes
+    ):
+        exe_zip = Zip.load(script)
+        rewrite_file = script + ".rewrite"
+        with open(rewrite_file, "wb") as fp:
+            shebang = exe_zip.isolate_header(out_fp=fp, stop_at=b"#!")
+            fp.write(shebang_bytes)
+            TRACER.log(
+                "Re-wrote windows script {script} embedded shebang from {old_shebang!r} to "
+                "{new_shebang!r}".format(
+                    script=script, old_shebang=shebang, new_shebang=shebang_bytes
+                )
+            )
+            exe_zip.isolate_zip(out_fp=fp)
+        safe_rename(rewrite_file, script)
+
     @classmethod
     def enclosing(cls, python):
         # type: (Union[str, PythonInterpreter]) -> Optional[Virtualenv]
@@ -218,8 +245,8 @@ class Virtualenv(object):
         # type: (...) -> None
         self._venv_dir = venv_dir
         self._custom_prompt = custom_prompt
-        self._bin_dir = os.path.join(venv_dir, "bin")
-        python_exe_path = os.path.join(self._bin_dir, python_exe_name)
+        self._bin_dir = os.path.join(venv_dir, SCRIPT_DIR)
+        python_exe_path = os.path.join(self._bin_dir, script_name(python_exe_name))
         try:
             self._interpreter = PythonInterpreter.from_binary(python_exe_path)
         except PythonInterpreter.InterpreterNotFound as e:
@@ -249,7 +276,7 @@ class Virtualenv(object):
 
     def bin_path(self, *components):
         # type: (*str) -> str
-        return os.path.join(self._bin_dir, *components)
+        return script_name(os.path.join(self._bin_dir, *components))
 
     @property
     def bin_dir(self):
@@ -313,6 +340,12 @@ class Virtualenv(object):
         python_args=None,  # type: Optional[str]
     ):
         # type: (...) -> Iterator[str]
+
+        shebang = [python or self._interpreter.binary]
+        if python_args:
+            shebang.append(python_args)
+        shebang_bytes = "#!{shebang}\n".format(shebang=" ".join(shebang)).encode("utf-8")
+
         python_scripts = [
             executable for executable in self.iter_executables() if _is_python_script(executable)
         ]
@@ -326,16 +359,19 @@ class Virtualenv(object):
                 for line in fi:
                     buffer = get_stdout_bytes_buffer()
                     if fi.isfirstline():
-                        shebang = [python or self._interpreter.binary]
-                        if python_args:
-                            shebang.append(python_args)
-                        buffer.write(
-                            "#!{shebang}\n".format(shebang=" ".join(shebang)).encode("utf-8")
-                        )
+                        buffer.write(shebang_bytes)
                         yield fi.filename()
                     else:
                         # N.B.: These lines include the newline already.
                         buffer.write(cast(bytes, line))
+        if WINDOWS:
+            for executable in self.iter_executables():
+                if not executable.endswith(".exe"):
+                    continue
+                if executable in self._base_bin:
+                    continue
+                self.rewrite_windows_script(executable, shebang_bytes)
+                yield executable
 
     def install_pip(self):
         # type: () -> str

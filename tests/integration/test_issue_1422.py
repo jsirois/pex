@@ -6,7 +6,15 @@ import re
 import subprocess
 import sys
 
-from pex.testing import PY27, PY37, PY310, ensure_python_interpreter, make_env, run_pex_command
+from pex.testing import (
+    PY27,
+    PY37,
+    PY310,
+    ensure_python_interpreter,
+    make_env,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,7 +31,7 @@ def test_unconstrained_universal_venv_pex(tmpdir):
         **extra_env  # type: str
     ):
         # type: (...) -> Tuple[bytes, bytes, int]
-        process = subprocess.Popen(
+        process = pex_popen(
             args=[
                 python,
                 setuptools_pex,

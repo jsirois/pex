@@ -14,7 +14,16 @@ from pex.interpreter import PythonInterpreter
 from pex.pex import PEX
 from pex.pex_bootstrapper import ensure_venv
 from pex.pex_info import PexInfo
-from pex.testing import PY27, PY37, PY_VER, ensure_python_interpreter, make_env, run_pex_command
+from pex.testing import (
+    PY27,
+    PY37,
+    PY_VER,
+    ensure_python_interpreter,
+    make_env,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 from pex.venv.pex import CollisionError
 from pex.venv.virtualenv import Virtualenv
@@ -117,7 +126,7 @@ def test_ensure_venv_short_link(
     venv_pex = ensure_venv(PEX(collisions_pex), collisions_ok=True)
     # We happen to know built distributions are always ordered before downloaded wheels in PEXes
     # as a detail of how `pex/resolver.py` works.
-    assert 42 == subprocess.Popen(args=[venv_pex.pex], env=make_env(PEX_SCRIPT="pex")).wait()
+    assert 42 == pex_popen(args=[venv_pex.pex], env=make_env(PEX_SCRIPT="pex")).wait()
 
 
 def test_ensure_venv_namespace_packages(tmpdir):
@@ -176,7 +185,7 @@ def test_ensure_venv_namespace_packages(tmpdir):
     def find_package_paths(venv):
         # type: (Virtualenv) -> Set[Text]
         return set(
-            subprocess.check_output(
+            pex_check_output(
                 args=[
                     venv.join_path("pex"),
                     "-c",
@@ -272,7 +281,7 @@ def test_boot_compatible_issue_1020_no_ic(tmpdir):
         # type: (Optional[str]) -> None
         args = [python] if python else []
         args.extend([pex, "-c", "import psutil, sys; print(sys.executable)"])
-        output = subprocess.check_output(args=args, stderr=subprocess.PIPE)
+        output = pex_check_output(args=args, stderr=subprocess.PIPE)
 
         # N.B.: We expect the current interpreter the PEX was built with to be selected since the
         # PEX contains a single platform specific distribution that only works with that
@@ -336,7 +345,7 @@ def test_boot_compatible_issue_1020_ic_min_compatible_build_time_hole(tmpdir):
     ).assert_success()
 
     # Now try to run the PEX remotely where both min and max exist.
-    output = subprocess.check_output(
+    output = pex_check_output(
         args=[min_interpreter.binary, pex, "-c", "import psutil, sys; print(sys.executable)"],
         env=make_env(
             PEX_PYTHON_PATH=os.pathsep.join((min_interpreter.binary, max_interpreter.binary))
@@ -371,7 +380,7 @@ def test_boot_resolve_fail(
     run_pex_command(args=["--python", py37.binary, "psutil==5.9.0", "-o", pex]).assert_success()
 
     pex_python_path = os.pathsep.join((py27.binary, py310.binary))
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[py27.binary, pex, "-c", ""],
         env=make_env(PEX_PYTHON_PATH=pex_python_path),
         stderr=subprocess.PIPE,

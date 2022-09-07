@@ -2,13 +2,12 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 from textwrap import dedent
 
 from colors import crossed, red
 
 from pex.common import safe_open
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -63,4 +62,4 @@ def test_requirements_pex(tmpdir):
         ]
     ).assert_success()
 
-    assert red(crossed("Broken")) == subprocess.check_output(args=[app_pex]).decode("utf-8").strip()
+    assert red(crossed("Broken")) == pex_check_output(args=[app_pex]).decode("utf-8").strip()

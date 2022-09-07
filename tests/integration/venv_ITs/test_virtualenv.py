@@ -3,13 +3,12 @@
 
 import os.path
 import shutil
-import subprocess
 
 import pytest
 
 from pex.dist_metadata import Distribution
 from pex.pep_503 import ProjectName
-from pex.testing import ALL_PY_VERSIONS, ensure_python_venv
+from pex.testing import ALL_PY_VERSIONS, ensure_python_venv, pex_check_call
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 
@@ -81,7 +80,7 @@ def test_iter_distributions(
     assert os.path.realpath(venv.site_packages_dir) == os.path.realpath(pip_dist.location)
     assert ProjectName("cowsay") not in dists
 
-    subprocess.check_call(args=[pip, "install", "cowsay==4.0"])
+    pex_check_call(args=[pip, "install", "cowsay==4.0"])
     dists = index_distributions(venv)
     cowsay_dist = dists.get(ProjectName("cowsay"))
     assert cowsay_dist is not None, "Expected venv to have cowsay installed."

@@ -11,11 +11,21 @@ from typing import Text, Tuple
 import pytest
 
 from pex.common import safe_open
-from pex.testing import ALL_PY_VERSIONS, ensure_python_interpreter, make_env, run_pex_command
+from pex.os import WINDOWS
+from pex.testing import (
+    ALL_PY_VERSIONS,
+    ensure_python_interpreter,
+    make_env,
+    pex_check_output,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, Iterator, List
+
+
+pytestmark = pytest.mark.skipif(WINDOWS, "The /bin/sh boot technique only works on Linux and Mac")
 
 
 @pytest.mark.parametrize(
@@ -35,11 +45,16 @@ def test_execute(
     run_pex_command(
         args=["cowsay==4.0", "-c", "cowsay", "-o", cowsay, "--sh-boot"] + execution_mode_args
     ).assert_success()
-    assert "4.0" == subprocess.check_output(args=[cowsay, "--version"]).decode("utf-8").strip()
+    assert "4.0" == pex_check_output(args=[cowsay, "--version"]).decode("utf-8").strip()
 
 
 def interpreters():
     # type: () -> Iterable[Tuple[Text, List[Text]]]
+
+    # We skip for WINDOWS above, but test collection executes all marks and we don't want to even
+    # attempt to use the shell finding code below on Windows.
+    if WINDOWS:
+        return ()
 
     def iter_interpreters():
         # type: () -> Iterator[Tuple[Text, List[Text]]]
@@ -55,7 +70,7 @@ def interpreters():
             yield entry(interpreter)
 
         locations = (
-            subprocess.check_output(
+            pex_check_output(
                 args=["/usr/bin/env", "bash", "-c", "command -v ash bash busybox dash ksh sh zsh"]
             )
             .decode("utf-8")
@@ -88,9 +103,7 @@ def test_execute_via_interpreter(
 
     assert (
         "4.0"
-        == subprocess.check_output(args=interpreter_cmd + [cowsay, "--version"])
-        .decode("utf-8")
-        .strip()
+        == pex_check_output(args=interpreter_cmd + [cowsay, "--version"]).decode("utf-8").strip()
     )
 
 
@@ -117,7 +130,7 @@ def test_python_shebang_respected(tmpdir):
 
     # N.B.: Python 2.7 does not send version to stdout; so we redirect stdout to stderr to be able
     # to uniformly retrieve the Python version.
-    output = subprocess.check_output(args=[cowsay], stderr=subprocess.STDOUT).decode("utf-8")
+    output = pex_check_output(args=[cowsay], stderr=subprocess.STDOUT).decode("utf-8")
     version = "Python {version}".format(version=".".join(map(str, sys.version_info[:3])))
     assert output.startswith(version), output
 
@@ -143,11 +156,11 @@ def test_issue_1782(
         args=[pex_project_dir, "-c", "pex", "-o", pex] + execution_mode_args
     ).assert_success()
 
-    help_line1 = subprocess.check_output(args=[pex, "-h"]).decode("utf-8").splitlines()[0]
+    help_line1 = pex_check_output(args=[pex, "-h"]).decode("utf-8").splitlines()[0]
     assert help_line1.startswith("usage: {pex} ".format(pex=os.path.basename(pex))), help_line1
     assert (
         pex
-        == subprocess.check_output(
+        == pex_check_output(
             args=[pex, "-c", "import os; print(os.environ['PEX'])"], env=make_env(PEX_INTERPRETER=1)
         )
         .decode("utf-8")
@@ -186,10 +199,10 @@ def test_argv0(
     run_pex_command(
         args=["-D", src, "-e", "app:main", "-o", pex] + execution_mode_args
     ).assert_success()
-    assert {"PEX": pex, "argv0": pex} == json.loads(subprocess.check_output(args=[pex]))
+    assert {"PEX": pex, "argv0": pex} == json.loads(pex_check_output(args=[pex]))
 
     run_pex_command(args=["-D", src, "-m", "app", "-o", pex] + execution_mode_args).assert_success()
-    data = json.loads(subprocess.check_output(args=[pex]))
+    data = json.loads(pex_check_output(args=[pex]))
     assert pex == data.pop("PEX")
     assert "app.py" == os.path.basename(data.pop("argv0")), (
         "When executing modules we expect runpy.run_module to `alter_sys` in order to support "

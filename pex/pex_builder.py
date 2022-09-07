@@ -7,11 +7,12 @@ import hashlib
 import logging
 import os
 import shutil
+import sys
 
 from pex import pex_warnings
+from pex.atomic_directory import atomic_directory
 from pex.common import (
     Chroot,
-    atomic_directory,
     chmod_plus_x,
     filter_pyc_files,
     is_pyc_temporary_file,
@@ -27,6 +28,7 @@ from pex.dist_metadata import Distribution, MetadataError
 from pex.enum import Enum
 from pex.environment import PEXEnvironment
 from pex.finders import get_entry_point_from_console_script, get_script_from_distributions
+from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.orderedset import OrderedSet
@@ -58,7 +60,10 @@ __INSTALLED_FROM__ = '__PEX_EXE__'
 
 
 def __re_exec__(argv0, *extra_launch_args):
-  os.execv(argv0, [argv0] + list(extra_launch_args) + sys.argv[1:])
+  from pex.os import safe_execv
+  from pex.tracer import TRACER
+  argv = [argv0] + list(extra_launch_args) + sys.argv[1:]
+  safe_execv(argv)
 
 
 __execute__ = __name__ == "__main__"
@@ -81,6 +86,7 @@ def __maybe_install_pex__(pex, pex_root, pex_hash):
 
 def __maybe_run_venv__(pex, pex_root, pex_path):
   from pex.common import is_exe
+  from pex.sysconfig import SCRIPT_DIR, script_name
   from pex.tracer import TRACER
   from pex.variables import venv_dir
 
@@ -97,7 +103,7 @@ def __maybe_run_venv__(pex, pex_root, pex_path):
     return venv_dir
 
   TRACER.log('Executing venv PEX for {{}} at {{}}'.format(pex, venv_pex))
-  venv_python = os.path.join(venv_dir, 'bin', 'python')
+  venv_python = os.path.join(venv_dir, SCRIPT_DIR, script_name('python'))
   __re_exec__(venv_python, '-sE', venv_pex)
 
 
@@ -127,8 +133,8 @@ if __entry_point__ is None:
 __installed_from__ = os.environ.pop(__INSTALLED_FROM__, None)
 sys.argv[0] = os.path.realpath(__installed_from__ or sys.argv[0])
 
-sys.path[0] = os.path.abspath(sys.path[0])
-sys.path.insert(0, os.path.abspath(os.path.join(__entry_point__, {bootstrap_dir!r})))
+sys.path[0] = os.path.realpath(sys.path[0])
+sys.path.insert(0, os.path.realpath(os.path.join(__entry_point__, {bootstrap_dir!r})))
 
 __venv_dir__ = None
 if not __installed_from__:
@@ -578,7 +584,7 @@ class PEXBuilder(object):
             )
 
         bootstrap_digest = hashlib.sha1()
-        bootstrap_packages = ["third_party", "venv"]
+        bootstrap_packages = ["fs", "third_party", "venv"]
         if self._pex_info.includes_tools:
             bootstrap_packages.extend(["commands", "tools"])
         package_root = os.path.dirname(__file__)
@@ -673,7 +679,7 @@ class PEXBuilder(object):
             shutil.rmtree(path, True)
         elif os.path.isdir(tmp_pex):
             safe_delete(path)
-        os.rename(tmp_pex, path)
+        safe_rename(tmp_pex, path)
 
     def _build_packedapp(
         self,

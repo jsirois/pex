@@ -7,7 +7,14 @@ import subprocess
 from textwrap import dedent
 
 from pex.common import safe_open
-from pex.testing import PY310, ensure_python_distribution, make_project, run_pex_command
+from pex.testing import (
+    PY310,
+    ensure_python_distribution,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -48,7 +55,7 @@ def test_excepthook_scrubbing(tmpdir):
             )
         )
 
-    subprocess.check_call(args=[custom_python, "-m", "pip", "install", project_dir])
+    pex_check_call(args=[custom_python, "-m", "pip", "install", project_dir])
 
     src = os.path.join(str(tmpdir), "src")
     with safe_open(os.path.join(src, "app.py"), "w") as fp:
@@ -75,10 +82,10 @@ def test_excepthook_scrubbing(tmpdir):
     run_pex_command(args=["pex==2.1.92", "-c", "pex", "--"] + create_pex_args).assert_success()
 
     # A Python installation without the custom excepthook installed via .pth should work just fine.
-    assert "SUCCESS\n" == subprocess.check_output(args=[original_python, pex]).decode("utf-8")
+    assert "SUCCESS\n" == pex_check_output(args=[original_python, pex]).decode("utf-8")
 
     # But with the custom excepthook installed pre-PEX boot, we should reproduce earlier failures.
-    process = subprocess.Popen(args=[custom_python, pex], stdout=subprocess.PIPE)
+    process = pex_popen(args=[custom_python, pex], stdout=subprocess.PIPE)
     stdout, _ = process.communicate()
     assert 0 != process.returncode
     assert (
@@ -88,4 +95,4 @@ def test_excepthook_scrubbing(tmpdir):
 
     # Now demonstrate the fix.
     run_pex_command(args=create_pex_args).assert_success()
-    assert "SUCCESS\n" == subprocess.check_output(args=[custom_python, pex]).decode("utf-8")
+    assert "SUCCESS\n" == pex_check_output(args=[custom_python, pex]).decode("utf-8")

@@ -4,19 +4,23 @@
 import filecmp
 import os
 import stat
-import subprocess
 import sys
 import zipfile
 
 import pytest
 
 from pex.common import open_zip, safe_open, temporary_dir, touch
-from pex.compatibility import WINDOWS
-from pex.executor import Executor
 from pex.layout import Layout
 from pex.pex import PEX
 from pex.pex_builder import CopyMode, PEXBuilder
-from pex.testing import WheelBuilder, install_wheel, make_bdist, make_env
+from pex.testing import (
+    WheelBuilder,
+    install_wheel,
+    make_bdist,
+    make_env,
+    pex_call,
+    pex_check_output,
+)
 from pex.testing import write_simple_pex as write_pex
 from pex.typing import TYPE_CHECKING
 from pex.variables import ENV
@@ -123,7 +127,6 @@ def test_pex_builder_compilation():
         build_and_check(td3, True)
 
 
-@pytest.mark.skipif(WINDOWS, reason="No hardlinks on windows")
 def test_pex_builder_copy_or_link():
     # type: () -> None
     with temporary_dir() as td:
@@ -186,9 +189,7 @@ def test_pex_builder_add_source_relpath_issues_1192(
     pb.set_entry_point("main")
     pb.build("test.pex")
 
-    process = Executor.open_process(cmd=[os.path.abspath("test.pex")])
-    process.wait()
-    assert 42 == process.returncode
+    assert 42 == pex_call(args=[os.path.abspath("test.pex")])
 
 
 def test_pex_builder_deterministic_timestamp():
@@ -256,7 +257,7 @@ def test_pex_builder_script_from_pex_path(tmpdir):
     pb.set_script("my_app")
     pb.build(pex_file)
 
-    assert "hello world!\n" == subprocess.check_output(args=[pex_file]).decode("utf-8")
+    assert "hello world!\n" == pex_check_output(args=[pex_file]).decode("utf-8")
 
 
 def test_pex_builder_setuptools_script(tmpdir):
@@ -271,9 +272,7 @@ def test_pex_builder_setuptools_script(tmpdir):
         pb.set_script("shell_script")
         pb.build(pex_file)
 
-    assert "hello world from shell script\n" == subprocess.check_output(args=[pex_file]).decode(
-        "utf-8"
-    )
+    assert "hello world from shell script\n" == pex_check_output(args=[pex_file]).decode("utf-8")
 
 
 def test_pex_builder_packed(tmpdir):
@@ -291,7 +290,7 @@ def test_pex_builder_packed(tmpdir):
         pb.set_script("shell_script")
         pb.build(pex_app, layout=Layout.PACKED)
 
-    assert "hello world from shell script\n" == subprocess.check_output(
+    assert "hello world from shell script\n" == pex_check_output(
         args=[os.path.join(pex_app, "__main__.py")]
     ).decode("utf-8")
 
@@ -407,9 +406,7 @@ def test_pex_env_var_issues_1485(
             assert not os.path.exists(pex_root)
         else:
             assert len(os.listdir(pex_root)) > 0
-        output = subprocess.check_output(
-            launch_args + ["-c", script], env=make_env(PEX_ROOT=pex_root)
-        )
+        output = pex_check_output(launch_args + ["-c", script], env=make_env(PEX_ROOT=pex_root))
         actual = output.decode("utf-8").strip()
         assert os.path.realpath(expected_pex_env_var) == actual
         if Layout.ZIPAPP == expected_layout:
@@ -442,7 +439,7 @@ def test_pex_env_var_issues_1485(
     def assert_pex_env_var_nested(**env):
         # type: (**Any) -> None
         assert_pex_env_var(
-            script="import subprocess; subprocess.check_call([{other_pex!r}], env={env!r})".format(
+            script="import subprocess; pex_check_call([{other_pex!r}], env={env!r})".format(
                 other_pex=other_pex_path, env=make_env(**env)
             ),
             expected_pex_env_var=other_pex_path,
@@ -478,9 +475,7 @@ def test_build_compression(
 
     def assert_pex(pex):
         # type: (str) -> None
-        assert (
-            subprocess.check_output(args=[sys.executable, pex]).decode("utf-8").startswith(pex_root)
-        )
+        assert pex_check_output(args=[sys.executable, pex]).decode("utf-8").startswith(pex_root)
 
     compressed_pex = os.path.join(str(tmpdir), "compressed.pex")
     pb.build(compressed_pex, layout=layout)

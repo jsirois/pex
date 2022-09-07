@@ -10,7 +10,7 @@ from colors import colors
 
 from pex.common import safe_open
 from pex.enum import Enum
-from pex.testing import IntegResults, run_pex_command
+from pex.testing import IntegResults, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -120,7 +120,7 @@ def test_interpreter_mode_python_options(
             args.append("-O")
         args.extend(execution_configuration.args)
         args.extend(("program", "args"))
-        process = subprocess.Popen(
+        process = pex_popen(
             args=args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

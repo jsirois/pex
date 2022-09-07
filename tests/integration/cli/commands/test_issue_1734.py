@@ -2,11 +2,10 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 
 from pex.cli.testing import run_pex3
 from pex.interpreter import PythonInterpreter
-from pex.testing import run_pex_command
+from pex.testing import pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -55,7 +54,7 @@ def test_lock_create_sdist_requires_python_different_from_current(
     )
 
     # Now show it currently works.
-    subprocess.check_call(
+    pex_check_call(
         args=[py27.binary, "-m", "pex.cli"] + create_lock_args + ["--pip-version", "20.3.4-patched"]
     )
     run_pex_command(

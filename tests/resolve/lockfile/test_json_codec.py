@@ -23,6 +23,7 @@ from pex.resolve.path_mappings import PathMapping, PathMappings
 from pex.resolve.resolved_requirement import Fingerprint, Pin
 from pex.resolve.resolver_configuration import ResolverVersion
 from pex.sorted_tuple import SortedTuple
+from pex.testing import pex_popen
 from pex.third_party.packaging import tags
 from pex.typing import TYPE_CHECKING
 
@@ -182,7 +183,7 @@ class PatchTool(object):
             {patch}
             """
         ).format(lock_file=os.path.basename(lock_file), patch=patch)
-        process = subprocess.Popen(args=["git", "apply"], cwd=self.tmpdir, stdin=subprocess.PIPE)
+        process = pex_popen(args=["git", "apply"], cwd=self.tmpdir, stdin=subprocess.PIPE)
         process.communicate(input=patch.encode("utf-8"))
         assert 0 == process.returncode, "Applying patch failed with exit code {}".format(
             process.returncode

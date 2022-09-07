@@ -2,10 +2,10 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 
 from pex.common import touch
+from pex.testing import pex_check_call, pex_check_output
 from pex.typing import TYPE_CHECKING
 from pex.vendor import VendorSpec
 
@@ -33,16 +33,16 @@ def test_git():
 def test_git_prep_command(tmpdir):
     # type: (Any) -> None
     repo = os.path.join(str(tmpdir), "repo")
-    subprocess.check_call(["git", "init", repo])
+    pex_check_call(["git", "init", repo])
     assert os.path.isdir(repo)
 
-    subprocess.check_call(["git", "config", "user.email", "you@example.com"], cwd=repo)
-    subprocess.check_call(["git", "config", "user.name", "Your Name"], cwd=repo)
+    pex_check_call(["git", "config", "user.email", "you@example.com"], cwd=repo)
+    pex_check_call(["git", "config", "user.name", "Your Name"], cwd=repo)
 
     touch(os.path.join(repo, "README"))
-    subprocess.check_call(["git", "add", "README"], cwd=repo)
-    subprocess.check_call(["git", "commit", "-m", "Initial Commit."], cwd=repo)
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo).decode("utf-8").strip()
+    pex_check_call(["git", "add", "README"], cwd=repo)
+    pex_check_call(["git", "commit", "-m", "Initial Commit."], cwd=repo)
+    commit = pex_check_output(["git", "rev-parse", "HEAD"], cwd=repo).decode("utf-8").strip()
 
     prep_file = os.path.join(repo, "prep")
     assert not os.path.exists(prep_file)
@@ -60,8 +60,7 @@ def test_git_prep_command(tmpdir):
 
     clone = vendor_spec.prepare()
     assert (
-        commit
-        == subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=clone).decode("utf-8").strip()
+        commit == pex_check_output(["git", "rev-parse", "HEAD"], cwd=clone).decode("utf-8").strip()
     )
     assert not os.path.exists(prep_file)
     assert os.path.isfile(os.path.join(clone, "prep"))

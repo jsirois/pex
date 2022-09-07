@@ -4,13 +4,12 @@
 import os
 import re
 import shutil
-import subprocess
 
 import pytest
 
 from pex.cli.testing import run_pex3
 from pex.common import touch
-from pex.testing import IS_PYPY, PY_VER, run_pex_command
+from pex.testing import IS_PYPY, PY_VER, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -52,7 +51,7 @@ def test_fingerprint_stability(
 
     # Running the test suite generates .pyc files which should not count against the project
     # content hash.
-    subprocess.check_call(
+    pex_check_call(
         args=[
             "tox",
             "-e",

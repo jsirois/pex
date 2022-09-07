@@ -19,6 +19,8 @@ from pex.common import filter_pyc_dirs, filter_pyc_files, is_python_script, safe
 from pex.compatibility import get_stdout_bytes_buffer, urlparse
 from pex.dist_metadata import Distribution, EntryPoint
 from pex.interpreter import PythonInterpreter
+from pex.os import WINDOWS
+from pex.sysconfig import SCRIPT_DIR
 from pex.typing import TYPE_CHECKING, cast
 from pex.venv.virtualenv import Virtualenv
 
@@ -563,7 +565,7 @@ class Record(object):
 
     def _fixup_scripts(self):
         # type: (...) -> None
-        bin_dir = os.path.join(self.prefix_dir, "bin")
+        bin_dir = os.path.join(self.prefix_dir, SCRIPT_DIR)
         if not os.path.isdir(bin_dir):
             return
 
@@ -575,6 +577,7 @@ class Record(object):
                 Distribution.parse_entry_map(entry_points_abspath).get("console_scripts", {})
             )
 
+        exes = []  # type: List[str]
         scripts = {}  # type: Dict[str, Optional[bytes]]
         for script_name in os.listdir(bin_dir):
             script_path = os.path.join(bin_dir, script_name)
@@ -609,6 +612,15 @@ class Record(object):
                 # pex/vendor/_vendored/pip/pip/_vendor/distlib/scripts.py on line 41:
                 # https://github.com/pantsbuild/pex/blob/196b4cd5b8dd4b4af2586460530e9a777262be7d/pex/vendor/_vendored/pip/pip/_vendor/distlib/scripts.py#L41
                 scripts[script_path] = b"# -*- coding: utf-8 -*-"
+            elif WINDOWS:
+                name, ext = os.path.splitext(script_name)
+                if ext == ".exe" and name in console_scripts:
+                    exes.append(script_path)
+
+        shebang_bytes = b"#!python\n"
+        for exe in exes:
+            Virtualenv.rewrite_windows_script(exe, shebang_bytes)
+
         if not scripts:
             return
 
@@ -621,7 +633,7 @@ class Record(object):
                     # Ensure python shebangs are reproducible. The only place these can be used is
                     # in venv mode PEXes where the `#!python` placeholder shebang will be re-written
                     # to use the venv's python interpreter.
-                    buffer.write(b"#!python\n")
+                    buffer.write(shebang_bytes)
                 elif (
                     not first_non_shebang_line
                     or cast(bytes, line).strip() == first_non_shebang_line
@@ -636,5 +648,6 @@ class Record(object):
         if direct_url_relpath:
             direct_url_abspath = os.path.join(self.prefix_dir, direct_url_relpath)
             with open(direct_url_abspath) as fp:
-                if urlparse.urlparse(json.load(fp)["url"]).scheme == "file":
-                    os.unlink(direct_url_abspath)
+                direct_url_data = json.load(fp)
+            if urlparse.urlparse(direct_url_data["url"]).scheme == "file":
+                os.unlink(direct_url_abspath)

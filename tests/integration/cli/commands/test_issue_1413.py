@@ -3,7 +3,6 @@
 
 import os
 import shutil
-import subprocess
 
 import pytest
 
@@ -15,7 +14,7 @@ from pex.resolve.lockfile import json_codec
 from pex.resolve.lockfile.model import Lockfile
 from pex.resolve.path_mappings import PathMapping, PathMappings
 from pex.resolve.resolved_requirement import Pin
-from pex.testing import make_env, run_pex_command
+from pex.testing import make_env, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -37,7 +36,7 @@ def find_links_repo(td):
     ).assert_success()
 
     find_links = str(td.join("find-links", "repo"))
-    subprocess.check_call(
+    pex_check_call(
         args=[ansicolors_seed_pex, "repository", "extract", "-f", find_links],
         env=make_env(PEX_TOOLS=1),
     )

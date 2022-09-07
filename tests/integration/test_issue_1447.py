@@ -2,11 +2,10 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 import os
 import shutil
-import subprocess
 import sys
 
 from pex.pex_info import PexInfo
-from pex.testing import run_pex_command
+from pex.testing import pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 from pex.variables import unzip_dir
 
@@ -29,10 +28,10 @@ def test_layout_identification(tmpdir):
     expected_unzip_dir = unzip_dir(pex_root, pex_hash)
     assert not os.path.exists(expected_unzip_dir)
 
-    subprocess.check_call(args=[pex_file, "-c", ""])
+    pex_check_call(args=[pex_file, "-c", ""])
     assert os.path.isdir(expected_unzip_dir)
 
     shutil.rmtree(expected_unzip_dir)
     os.chmod(pex_file, 0o644)
-    subprocess.check_call(args=[sys.executable, pex_file, "-c", ""])
+    pex_check_call(args=[sys.executable, pex_file, "-c", ""])
     assert os.path.isdir(expected_unzip_dir)

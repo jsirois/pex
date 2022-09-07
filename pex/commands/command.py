@@ -73,7 +73,7 @@ def try_open_file(
     # type: (...) -> Result
     opener, url = (
         ("xdg-open", "https://www.freedesktop.org/wiki/Software/xdg-utils/")
-        if "Linux" == os.uname()[0]
+        if sys.platform.startswith("linux")
         else ("open", None)
     )
     with open(os.devnull, "wb") as devnull:

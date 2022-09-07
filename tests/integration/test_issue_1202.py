@@ -2,13 +2,12 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 
 import pytest
 
 from pex.interpreter import PythonInterpreter
 from pex.pex import PEX
-from pex.testing import PY27, ensure_python_interpreter, run_pex_command
+from pex.testing import PY27, ensure_python_interpreter, pex_check_call, run_pex_command
 from pex.third_party.packaging import tags
 from pex.typing import TYPE_CHECKING
 
@@ -55,7 +54,7 @@ def test_prefer_binary(tmpdir):
         args=["--prefer-binary", "JPype1", "-o", pex], python=PY27_BINARY
     ).assert_success()
 
-    subprocess.check_call(args=[PY27_BINARY, pex, "-c", "import jpype"])
+    pex_check_call(args=[PY27_BINARY, pex, "-c", "import jpype"])
     distributions = tuple(
         PEX(pex, interpreter=PythonInterpreter.from_binary(PY27_BINARY)).resolve()
     )

@@ -3,7 +3,6 @@
 
 import os
 import shutil
-import subprocess
 import sys
 from textwrap import dedent
 
@@ -20,7 +19,14 @@ from pex.pex_bootstrapper import (
     iter_compatible_interpreters,
 )
 from pex.pex_builder import PEXBuilder
-from pex.testing import PY27, PY37, PY310, ensure_python_interpreter
+from pex.testing import (
+    PY27,
+    PY37,
+    PY310,
+    ensure_python_interpreter,
+    pex_check_call,
+    pex_check_output,
+)
 from pex.typing import TYPE_CHECKING
 from pex.variables import ENV
 
@@ -205,7 +211,7 @@ def test_ensure_venv_activate_issues_1276(tmpdir):
     venv_pex = ensure_venv(PEX(pb.path()))
 
     expected_python_bin_dir = (
-        subprocess.check_output(
+        pex_check_output(
             args=[
                 venv_pex.pex,
                 "-c",
@@ -217,7 +223,7 @@ def test_ensure_venv_activate_issues_1276(tmpdir):
     )
     bash_activate = venv_pex.bin_file("activate")
 
-    subprocess.check_call(
+    pex_check_call(
         args=[
             "/usr/bin/env",
             "bash",

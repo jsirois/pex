@@ -4,7 +4,6 @@
 import filecmp
 import os.path
 import shutil
-import subprocess
 import sys
 import tempfile
 from textwrap import dedent
@@ -17,7 +16,7 @@ from pex.common import safe_open
 from pex.compatibility import urlparse
 from pex.resolve.locked_resolve import VCSArtifact
 from pex.resolve.lockfile import json_codec
-from pex.testing import run_pex_command
+from pex.testing import pex_check_call, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -87,9 +86,7 @@ def test_vcs_direct_reference(test_tool):
 
     assert (
         colors.cyan("Miles Davis")
-        == subprocess.check_output(
-            args=[pex, "-c", "import colors; print(colors.cyan('Miles Davis'))"]
-        )
+        == pex_check_output(args=[pex, "-c", "import colors; print(colors.cyan('Miles Davis'))"])
         .decode("utf-8")
         .strip()
     )
@@ -104,7 +101,7 @@ def test_vcs_pip_proprietary(test_tool):
 
     assert (
         colors.magenta("Alecia Beth Moore")
-        == subprocess.check_output(
+        == pex_check_output(
             args=[pex, "-c", "import colors; print(colors.magenta('Alecia Beth Moore'))"]
         )
         .decode("utf-8")
@@ -162,7 +159,7 @@ def test_subdir(test_tool):
         "#egg=sdev_logging_utils&subdirectory=sdev_logging_utils"
     )
     assert (
-        subprocess.check_output(
+        pex_check_output(
             args=[pex, "-c", "import sdev_logging_utils; print(sdev_logging_utils.__file__)"]
         )
         .decode("utf-8")
@@ -230,16 +227,16 @@ def test_vcs_transitive(
     with safe_open(os.path.join(src, "setup.py"), "w") as fp:
         fp.write("from setuptools import setup; setup()")
 
-    subprocess.check_call(args=["git", "init", src])
-    subprocess.check_call(args=["git", "config", "user.email", "forty@two.com"], cwd=src)
-    subprocess.check_call(args=["git", "config", "user.name", "Douglas Adams"], cwd=src)
-    subprocess.check_call(args=["git", "checkout", "-b", "Golgafrincham"], cwd=src)
-    subprocess.check_call(args=["git", "add", "."], cwd=src)
-    subprocess.check_call(args=["git", "commit", "-m", "Only commit."], cwd=src)
+    pex_check_call(args=["git", "init", src])
+    pex_check_call(args=["git", "config", "user.email", "forty@two.com"], cwd=src)
+    pex_check_call(args=["git", "config", "user.name", "Douglas Adams"], cwd=src)
+    pex_check_call(args=["git", "checkout", "-b", "Golgafrincham"], cwd=src)
+    pex_check_call(args=["git", "add", "."], cwd=src)
+    pex_check_call(args=["git", "commit", "-m", "Only commit."], cwd=src)
 
     lock = test_tool.create_lock("git+file://{src}#egg=poetry".format(src=src))
     pex = test_tool.create_pex(lock, "-c", "recite")
     assert (
         colors.green("Prostetnic Vogon Jeltz")
-        == subprocess.check_output(args=[pex]).decode("utf-8").strip()
+        == pex_check_output(args=[pex]).decode("utf-8").strip()
     )

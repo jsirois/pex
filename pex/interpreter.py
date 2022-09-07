@@ -14,7 +14,6 @@ import subprocess
 import sys
 import sysconfig
 from collections import OrderedDict
-from textwrap import dedent
 
 from pex import third_party
 from pex.common import is_exe, safe_mkdtemp, safe_rmtree
@@ -23,12 +22,14 @@ from pex.dist_metadata import DistMetadata, Distribution, Requirement, Requireme
 from pex.executor import Executor
 from pex.jobs import Job, Retain, SpawnedJob, execute_parallel
 from pex.orderedset import OrderedSet
+from pex.os import WINDOWS
 from pex.pep_425 import CompatibilityTags
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pep_508 import MarkerEnvironment
 from pex.platforms import Platform
 from pex.pyenv import Pyenv
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.third_party.packaging import tags
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast, overload
@@ -775,31 +776,7 @@ class PythonInterpreter(object):
         else:
             pythonpath = third_party.expose(["pex"])
             cmd, env = cls._create_isolated_cmd(
-                binary,
-                args=[
-                    "-c",
-                    dedent(
-                        """\
-                        import os
-                        import sys
-
-                        from pex.common import atomic_directory, safe_open
-                        from pex.interpreter import PythonIdentity
-
-
-                        encoded_identity = PythonIdentity.get(binary={binary!r}).encode()
-                        with atomic_directory({cache_dir!r}, exclusive=False) as cache_dir:
-                            if not cache_dir.is_finalized():
-                                with safe_open(
-                                    os.path.join(cache_dir.work_dir, {info_file!r}), 'w'
-                                ) as fp:
-                                    fp.write(encoded_identity)
-                        """.format(
-                            binary=binary, cache_dir=cache_dir, info_file=cls.INTERP_INFO_FILE
-                        )
-                    ),
-                ],
-                pythonpath=pythonpath,
+                binary, args=["-m", "pex.interpreter_identify", cache_dir], pythonpath=pythonpath
             )
             # Ensure the `.` implicit PYTHONPATH entry contains no Pex code (of a different version)
             # that might interfere with the behavior we expect in the script above.
@@ -1087,11 +1064,18 @@ class PythonInterpreter(object):
 
         prefix = "pypy" if self._identity.interpreter == "PyPy" else "python"
         suffixes = ("{}.{}".format(version[0], version[1]), str(version[0]), "")
-        candidate_binaries = tuple("{}{}".format(prefix, suffix) for suffix in suffixes)
+        candidate_binaries = tuple(
+            script_name("{}{}".format(prefix, suffix)) for suffix in suffixes
+        )
 
         def iter_base_candidate_binary_paths(interpreter):
             # type: (PythonInterpreter) -> Iterator[str]
-            bin_dir = os.path.join(interpreter._identity.base_prefix, "bin")
+            # TODO(John Sirois): XXX: Is this always right on Windows?
+            bin_dir = (
+                interpreter._identity.base_prefix
+                if WINDOWS
+                else os.path.join(interpreter._identity.base_prefix, SCRIPT_DIR)
+            )
             for candidate_binary in candidate_binaries:
                 candidate_binary_path = os.path.join(bin_dir, candidate_binary)
                 if is_exe(candidate_binary_path):

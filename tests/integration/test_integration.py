@@ -17,12 +17,13 @@ from textwrap import dedent
 import pytest
 
 from pex.common import safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
-from pex.compatibility import WINDOWS, to_bytes
+from pex.compatibility import to_bytes
 from pex.dist_metadata import Distribution, Requirement
 from pex.fetcher import URLFetcher
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.network_configuration import NetworkConfiguration
+from pex.os import WINDOWS
 from pex.pex_info import PexInfo
 from pex.requirements import LogicalLine, PyPIRequirement, parse_requirement_file
 from pex.testing import (
@@ -38,6 +39,10 @@ from pex.testing import (
     ensure_python_interpreter,
     get_dep_dist_names_from_pex,
     make_env,
+    pex_call,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
     run_pex_command,
     run_simple_pex,
     run_simple_pex_test,
@@ -145,7 +150,7 @@ def test_pex_root_run():
             runtime_pex_root
         ), "Expected runtime pex root to be empty prior to any runs."
 
-        subprocess.check_call(args=[python310, pex_pex, "--version"], env=pex_env)
+        pex_check_call(args=[python310, pex_pex, "--version"], env=pex_env)
         assert_interpreters(label="runtime", pex_root=runtime_pex_root)
         assert_installed_wheels(label="runtime", pex_root=runtime_pex_root)
         assert [] == os.listdir(
@@ -219,7 +224,6 @@ def test_pex_repl_built():
         assert b">>>" in stdout
 
 
-@pytest.mark.skipif(WINDOWS, reason="No symlinks on windows")
 def test_pex_python_symlink():
     # type: () -> None
     with temporary_dir() as td:
@@ -329,7 +333,7 @@ def test_pex_path_arg():
                     else:
                         env = os.environ.copy()
                         env['RAN_ONCE'] = '1'
-                        subprocess.call([sys.executable] + ['%s'] + sys.argv, env=env)
+                        pex_call([sys.executable] + ['%s'] + sys.argv, env=env)
                         sys.exit()
                     """
                     % pex_out_path
@@ -601,7 +605,7 @@ def test_pex_manylinux_runtime():
         )
         results.assert_success()
 
-        out = subprocess.check_output([pex_path, tester_path])
+        out = pex_check_output([pex_path, tester_path])
         assert out.strip() == b"[1, 2, 3]"
 
 
@@ -621,7 +625,7 @@ def test_pex_exit_code_propagation():
         results = run_pex_command(["pytest", "-c", "pytest", "-o", pex_path])
         results.assert_success()
 
-        assert subprocess.call([pex_path, os.path.realpath(tester_path)]) == 1
+        assert pex_call([pex_path, os.path.realpath(tester_path)]) == 1
 
 
 @pytest.mark.skipif(NOT_CPYTHON27, reason="Tests environment markers that select for python 2.7.")
@@ -789,7 +793,7 @@ def test_multiplatform_entrypoint():
         )
         res.assert_success()
 
-        greeting = subprocess.check_output([pex_out_path])
+        greeting = pex_check_output([pex_out_path])
         assert b"Hello World!" == greeting.strip()
 
 
@@ -879,7 +883,7 @@ def test_setup_python():
             ["jsonschema==2.6.0", "--disable-cache", "--python={}".format(interpreter), "-o", pex]
         )
         results.assert_success()
-        subprocess.check_call([pex, "-c", "import jsonschema"])
+        pex_check_call([pex, "-c", "import jsonschema"])
 
 
 def test_setup_interpreter_constraint():
@@ -980,17 +984,17 @@ def test_setup_python_multiple_transitive_markers():
         ]
 
         py27_env = make_env(PATH=os.path.dirname(py27_interpreter))
-        subprocess.check_call(py2_only_program, env=py27_env)
+        pex_check_call(py2_only_program, env=py27_env)
 
-        stdout = subprocess.check_output(both_program, env=py27_env)
+        stdout = pex_check_output(both_program, env=py27_env)
         assert to_bytes(os.path.realpath(py27_interpreter)) == stdout.strip()
 
         py38_env = make_env(PATH=os.path.dirname(py310_interpreter))
         with pytest.raises(subprocess.CalledProcessError) as err:
-            subprocess.check_output(py2_only_program, stderr=subprocess.STDOUT, env=py38_env)
+            pex_check_output(py2_only_program, stderr=subprocess.STDOUT, env=py38_env)
         assert b"ModuleNotFoundError: No module named 'functools32'" in err.value.output
 
-        stdout = subprocess.check_output(both_program, env=py38_env)
+        stdout = pex_check_output(both_program, env=py38_env)
         assert to_bytes(os.path.realpath(py310_interpreter)) == stdout.strip()
 
 
@@ -1014,7 +1018,7 @@ def test_setup_python_direct_markers():
         py2_only_program = [pex, "-c", "import subprocess32"]
 
         with pytest.raises(subprocess.CalledProcessError) as err:
-            subprocess.check_output(
+            pex_check_output(
                 py2_only_program,
                 stderr=subprocess.STDOUT,
                 env=make_env(PATH=os.path.dirname(py310_interpreter)),
@@ -1044,7 +1048,7 @@ def test_setup_python_multiple_direct_markers():
         py2_only_program = [pex, "-c", "import subprocess32"]
 
         with pytest.raises(subprocess.CalledProcessError) as err:
-            subprocess.check_output(
+            pex_check_output(
                 py2_only_program,
                 stderr=subprocess.STDOUT,
                 env=make_env(PATH=os.path.dirname(py310_interpreter)),
@@ -1054,9 +1058,7 @@ def test_setup_python_multiple_direct_markers():
             is not None
         )
 
-        subprocess.check_call(
-            py2_only_program, env=make_env(PATH=os.path.dirname(py27_interpreter))
-        )
+        pex_check_call(py2_only_program, env=make_env(PATH=os.path.dirname(py27_interpreter)))
 
 
 def build_and_execute_pex_with_warnings(*extra_build_args, **extra_runtime_env):
@@ -1068,9 +1070,9 @@ def build_and_execute_pex_with_warnings(*extra_build_args, **extra_runtime_env):
         cmd = [tcl_pex, "-c", "from twitter.common.lang import Singleton"]
         env = os.environ.copy()
         env.update(**extra_runtime_env)
-        process = subprocess.Popen(cmd, env=env, stderr=subprocess.PIPE)
+        process = pex_popen(cmd, env=env, stderr=subprocess.PIPE)
         _, stderr = process.communicate()
-        return stderr
+        return cast(bytes, stderr)
 
 
 def test_emit_warnings_default():
@@ -1145,7 +1147,7 @@ def test_pex_run_strip_env():
         )
         results.assert_success()
         assert {} == json.loads(
-            subprocess.check_output([stripped_pex_file], env=env).decode("utf-8")
+            pex_check_output([stripped_pex_file], env=env).decode("utf-8")
         ), "Expected the entrypoint environment to be stripped of PEX_ environment variables."
 
         unstripped_pex_file = os.path.join(td, "unstripped.pex")
@@ -1160,7 +1162,7 @@ def test_pex_run_strip_env():
         )
         results.assert_success()
         assert pex_env == json.loads(
-            subprocess.check_output([unstripped_pex_file], env=env).decode("utf-8")
+            pex_check_output([unstripped_pex_file], env=env).decode("utf-8")
         ), "Expected the entrypoint environment to be left un-stripped."
 
 
@@ -1247,7 +1249,11 @@ def test_unzip_mode():
                     print(' '.join(sys.argv[1:]))
                     sys.stdout.flush()
                     sys.stderr.flush()
-                    os.execv(sys.executable, [sys.executable] + sys.argv[:-1])
+                    if os.name == 'nt':
+                        import subprocess
+                        sys.exit(pex_call([sys.executable] + sys.argv[:-1]))
+                    else:
+                        os.execv(sys.executable, [sys.executable] + sys.argv[:-1])
                     """
                 )
             )
@@ -1270,7 +1276,7 @@ def test_unzip_mode():
         result.assert_success()
         assert "PEXWarning: The `--unzip/--no-unzip` option is deprecated." in result.error
 
-        process1 = subprocess.Popen(
+        process1 = pex_popen(
             args=[pex_file, "quit", "re-exec"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         output1, error1 = process1.communicate()
@@ -1285,7 +1291,7 @@ def test_unzip_mode():
         assert not error1
 
         shutil.rmtree(unzipped_cache)
-        process2 = subprocess.Popen(
+        process2 = pex_popen(
             args=[pex_file, "quit", "re-exec"],
             env=make_env(PEX_UNZIP=False),
             stdout=subprocess.PIPE,
@@ -1348,6 +1354,9 @@ EXAMPLE_PYTHON_REQUIREMENTS_URL = (
 )
 
 
+@pytest.mark.skipif(
+    WINDOWS, "The run_proxy fixture requires os.mkfifo which does not exist on Windows."
+)
 def test_requirements_network_configuration(run_proxy, tmp_workdir):
     # type: (Callable[[Optional[str]], ContextManager[Tuple[int, str]]], str) -> None
     def req(
@@ -1419,7 +1428,7 @@ def test_venv_mode(
         # type: (Optional[str]) -> str
         pex_root = str(tmpdir)
         args = [pex_file] if pex_python else [sys.executable, pex_file]
-        stdout = subprocess.check_output(
+        stdout = pex_check_output(
             args=args + ["-c", "import sys; print(sys.executable)"],
             env=make_env(PEX_ROOT=pex_root, PEX_INTERPRETER=1, PEX_PYTHON=pex_python),
         )
@@ -1465,12 +1474,11 @@ def test_seed(
     )
     results.assert_success()
 
-    # Setting posix=False works around this issue under pypy: https://bugs.python.org/issue1170.
-    seed_argv = shlex.split(str(results.output), posix=False)
+    seed_argv = [str(results.output).strip()]
     isort_args = ["--version"]
-    seed_stdout = subprocess.check_output(seed_argv + isort_args)
+    seed_stdout = pex_check_output(seed_argv + isort_args)
     pex_args = [pex_file] if os.path.isfile(pex_file) else [sys.executable, pex_file]
-    pex_stdout = subprocess.check_output(pex_args + isort_args)
+    pex_stdout = pex_check_output(pex_args + isort_args)
     assert pex_stdout == seed_stdout
 
 
@@ -1511,9 +1519,9 @@ def test_seed_verbose(
     assert {} == verbose_info
 
     isort_args = ["--version"]
-    seed_stdout = subprocess.check_output(seeded_argv0 + isort_args)
+    seed_stdout = pex_check_output(seeded_argv0 + isort_args)
     pex_args = [pex_file] if os.path.isfile(pex_file) else [python, pex_file]
-    pex_stdout = subprocess.check_output(pex_args + isort_args)
+    pex_stdout = pex_check_output(pex_args + isort_args)
     assert pex_stdout == seed_stdout
 
 
@@ -1634,7 +1642,7 @@ def test_console_script_from_pex_path(tmpdir):
     result = run_pex_command(args=["-c", "my_app", "--pex-path", pex_with_script, "-o", pex_file])
     result.assert_success()
 
-    assert "hello world!\n" == subprocess.check_output(args=[pex_file]).decode("utf-8")
+    assert "hello world!\n" == pex_check_output(args=[pex_file]).decode("utf-8")
 
 
 @pytest.mark.skipif(
@@ -1655,7 +1663,7 @@ def test_invalid_macosx_platform_tag(tmpdir):
         args=ic_args + ["setproctitle", "--pex-repository", repository_pex, "-o", setproctitle_pex]
     ).assert_success()
 
-    subprocess.check_call(args=[setproctitle_pex, "-c", "import setproctitle"])
+    pex_check_call(args=[setproctitle_pex, "-c", "import setproctitle"])
 
 
 def test_require_hashes(tmpdir):
@@ -1701,13 +1709,13 @@ def test_require_hashes(tmpdir):
     requests_pex = os.path.join(str(tmpdir), "requests.pex")
 
     run_pex_command(args=["-r", requirements, "-o", requests_pex]).assert_success()
-    subprocess.check_call(args=[requests_pex, "-c", "import requests"])
+    pex_check_call(args=[requests_pex, "-c", "import requests"])
 
     # The hash checking mode should also work in constraints context.
     run_pex_command(
         args=["--constraints", requirements, "requests", "-o", requests_pex]
     ).assert_success()
-    subprocess.check_call(args=[requests_pex, "-c", "import requests"])
+    pex_check_call(args=[requests_pex, "-c", "import requests"])
 
     with open(requirements, "w") as fp:
         fp.write(
@@ -1786,5 +1794,5 @@ def test_binary_scripts(
         args=["py-spy==0.3.8", "-c", "py-spy", "-o", py_spy_pex, "--layout", layout.value]
         + execution_mode_args
     ).assert_success()
-    output = subprocess.check_output(args=[sys.executable, py_spy_pex, "-V"])
+    output = pex_check_output(args=[sys.executable, py_spy_pex, "-V"])
     assert output == b"py-spy 0.3.8\n"

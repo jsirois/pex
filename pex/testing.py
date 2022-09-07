@@ -12,26 +12,24 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from textwrap import dedent
+from typing import Sequence
 
-from pex.common import (
-    atomic_directory,
-    open_zip,
-    safe_mkdir,
-    safe_mkdtemp,
-    safe_rmtree,
-    safe_sleep,
-    temporary_dir,
-)
+import pytest
+
+from pex.atomic_directory import atomic_directory
+from pex.common import open_zip, safe_mkdir, safe_mkdtemp, safe_rmtree, safe_sleep, temporary_dir
 from pex.compatibility import to_unicode
 from pex.dist_metadata import Distribution
 from pex.executor import Executor
 from pex.interpreter import PythonInterpreter
+from pex.os import LINUX, MAC, WINDOWS
 from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
 from pex.pip.installation import get_pip
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.targets import LocalInterpreter
-from pex.typing import TYPE_CHECKING
+from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
 
 if TYPE_CHECKING:
@@ -59,8 +57,8 @@ IS_PYPY = hasattr(sys, "pypy_version_info")
 IS_PYPY2 = IS_PYPY and sys.version_info[0] == 2
 IS_PYPY3 = IS_PYPY and sys.version_info[0] == 3
 NOT_CPYTHON27 = IS_PYPY or PY_VER != (2, 7)
-IS_LINUX = platform.system() == "Linux"
-IS_MAC = platform.system() == "Darwin"
+IS_LINUX = LINUX
+IS_MAC = MAC
 IS_NOT_LINUX = not IS_LINUX
 NOT_CPYTHON27_OR_OSX = NOT_CPYTHON27 or IS_NOT_LINUX
 
@@ -436,11 +434,16 @@ def run_simple_pex_test(
         return run_simple_pex(pex, args=args, env=env, interpreter=interpreter)
 
 
+PYENV_GIT_URL = "https://github.com/{pyenv}".format(
+    pyenv="pyenv-win/pyenv-win.git" if WINDOWS else "pyenv/pyenv.git"
+)
+
+
 def bootstrap_python_installer(dest):
     # type: (str) -> None
     for _ in range(3):
         try:
-            subprocess.check_call(["git", "clone", "https://github.com/pyenv/pyenv.git", dest])
+            pex_check_call(["git", "clone", PYENV_GIT_URL, dest])
         except subprocess.CalledProcessError as e:
             print("caught exception: %r" % e)
             continue
@@ -456,7 +459,7 @@ def bootstrap_python_installer(dest):
 # minutes for a shard.
 PY27 = "2.7.18"
 PY37 = "3.7.11"
-PY310 = "3.10.1"
+PY310 = "3.10.6"
 
 ALL_PY_VERSIONS = (PY27, PY37, PY310)
 _ALL_PY3_VERSIONS = (PY37, PY310)
@@ -467,36 +470,45 @@ def ensure_python_distribution(version):
     if version not in ALL_PY_VERSIONS:
         raise ValueError("Please constrain version to one of {}".format(ALL_PY_VERSIONS))
 
-    pyenv_root = os.path.abspath(
-        os.path.join(
-            os.path.expanduser(os.environ.get("_PEX_TEST_PYENV_ROOT", "~/.pex_dev")),
-            "pyenv",
-        )
-    )
+    assert (
+        not WINDOWS or version == PY310
+    ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
+
+    basedir = os.path.expanduser(os.environ.get("_PEX_TEST_PYENV_ROOT", "~/.pex_dev"))
+    clone_dir = os.path.abspath(os.path.join(basedir, "pyenv-win" if WINDOWS else "pyenv"))
+    pyenv_root = os.path.join(clone_dir, "pyenv-win") if WINDOWS else clone_dir
     interpreter_location = os.path.join(pyenv_root, "versions", version)
 
-    pyenv = os.path.join(pyenv_root, "bin", "pyenv")
+    pyenv = os.path.join(pyenv_root, "bin", "pyenv.bat" if WINDOWS else "pyenv")
     pyenv_env = os.environ.copy()
     pyenv_env["PYENV_ROOT"] = pyenv_root
 
-    pip = os.path.join(interpreter_location, "bin", "pip")
+    if WINDOWS:
+        python = os.path.join(interpreter_location, "python.exe")
+    else:
+        major, minor = version.split(".")[:2]
+        python = os.path.join(
+            interpreter_location, "bin", "python{major}.{minor}".format(major=major, minor=minor)
+        )
 
-    with atomic_directory(target_dir=os.path.join(pyenv_root), exclusive=True) as target_dir:
-        if not target_dir.is_finalized():
-            bootstrap_python_installer(target_dir.work_dir)
+    pip = os.path.join(interpreter_location, SCRIPT_DIR, script_name("pip"))
+
+    with atomic_directory(target_dir=clone_dir, exclusive=True) as atomic_dir:
+        if not atomic_dir.is_finalized():
+            bootstrap_python_installer(atomic_dir.work_dir)
 
     with atomic_directory(
         target_dir=interpreter_location, exclusive=True
     ) as interpreter_target_dir:
         if not interpreter_target_dir.is_finalized():
-            subprocess.check_call(
+            pex_check_call(
                 [
                     "git",
-                    "--git-dir={}".format(os.path.join(pyenv_root, ".git")),
-                    "--work-tree={}".format(pyenv_root),
+                    "--git-dir={}".format(os.path.join(clone_dir, ".git")),
+                    "--work-tree={}".format(clone_dir),
                     "pull",
                     "--ff-only",
-                    "https://github.com/pyenv/pyenv.git",
+                    PYENV_GIT_URL,
                 ]
             )
             env = pyenv_env.copy()
@@ -510,17 +522,12 @@ def ensure_python_distribution(version):
                 # linking the wrong libpython, force `RPATH`, which is searched 1st by the linker,
                 # with with `--disable-new-dtags`.
                 env["LDFLAGS"] = "-Wl,--disable-new-dtags"
-            subprocess.check_call([pyenv, "install", "--keep", version], env=env)
-            subprocess.check_call([pip, "install", "-U", "pip<22.1"])
-
-    major, minor = version.split(".")[:2]
-    python = os.path.join(
-        interpreter_location, "bin", "python{major}.{minor}".format(major=major, minor=minor)
-    )
+            pex_check_call([pyenv, "install", version], env=env)
+            pex_check_call([python, "-m", "pip", "install", "-U", "pip<22.1"])
 
     def run_pyenv(args):
         # type: (Iterable[str]) -> Text
-        return to_unicode(subprocess.check_output([pyenv] + list(args), env=pyenv_env))
+        return to_unicode(pex_check_output([pyenv] + list(args), env=pyenv_env))
 
     return interpreter_location, python, pip, run_pyenv
 
@@ -532,16 +539,18 @@ def ensure_python_venv(version, latest_pip=True, system_site_packages=False):
         args = [python, "-m", "venv", venv]
         if system_site_packages:
             args.append("--system-site-packages")
-        subprocess.check_call(args=args)
+        pex_check_call(args=args)
     else:
-        subprocess.check_call(args=[pip, "install", "virtualenv==16.7.10"])
+        pex_check_call(args=[pip, "install", "virtualenv==16.7.10"])
         args = [python, "-m", "virtualenv", venv, "-q"]
         if system_site_packages:
             args.append("--system-site-packages")
-        subprocess.check_call(args=args)
-    python, pip = tuple(os.path.join(venv, "bin", exe) for exe in ("python", "pip"))
+        pex_check_call(args=args)
+    python, pip = tuple(
+        os.path.join(venv, SCRIPT_DIR, script_name(exe)) for exe in ("python", "pip")
+    )
     if latest_pip:
-        subprocess.check_call(args=[pip, "install", "-U", "pip<22.1"])
+        pex_check_call(args=[pip, "install", "-U", "pip<22.1"])
     return python, pip
 
 
@@ -634,7 +643,7 @@ def run_commands_with_jitter(
 
         # Ensure the PEX is fully rebuilt.
         safe_rmtree(pex_root)
-        subprocess.check_call(args=cmd, env=env)
+        pex_check_call(args=cmd, env=env)
         paths.append(path)
     return paths
 
@@ -666,6 +675,52 @@ def run_command_with_jitter(
 
 def pex_project_dir():
     # type: () -> str
-    return str(
-        subprocess.check_output(["git", "rev-parse", "--show-toplevel"]).decode("ascii").strip()
-    )
+    return str(pex_check_output(["git", "rev-parse", "--show-toplevel"]).decode("ascii").strip())
+
+
+def is_pex(path):
+    # type: (str) -> bool
+    try:
+        PexInfo.from_pex(path)
+        return True
+    except (KeyError, IOError, OSError):
+        return False
+
+
+def _safe_args(args):
+    # type: (Sequence[str]) -> List[str]
+    if WINDOWS and args[0].endswith((".py", ".pyz", ".pex")) or is_pex(args[0]):
+        return [sys.executable] + list(args)
+    return args if isinstance(args, list) else list(args)
+
+
+def pex_call(
+    args,  # type: Sequence[str]
+    **kwargs  # type: Any
+):
+    # type: (...) -> int
+    return subprocess.call(args=_safe_args(args), **kwargs)
+
+
+def pex_check_call(
+    args,  # type: Sequence[str]
+    **kwargs  # type: Any
+):
+    # type: (...) -> None
+    subprocess.check_call(args=_safe_args(args), **kwargs)
+
+
+def pex_check_output(
+    args,  # type: Sequence[str]
+    **kwargs  # type: Any
+):
+    # type: (...) -> bytes
+    return cast(bytes, subprocess.check_output(args=_safe_args(args), **kwargs))
+
+
+def pex_popen(
+    args,  # type: Sequence[str]
+    **kwargs  # type: Any
+):
+    # type: (...) -> subprocess.Popen
+    return subprocess.Popen(args=_safe_args(args), **kwargs)

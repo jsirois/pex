@@ -312,14 +312,14 @@ def test_find_dist_info_file():
         is None
     )
 
-    assert "Foo-1.0.dist-info/bar" == find_dist_info_file(
+    assert os.path.join("Foo-1.0.dist-info", "bar") == find_dist_info_file(
         project_name="foo",
         version="1.0",
         filename="bar",
         listing=[
-            "foo-100.dist-info/bar",
-            "Foo-1.0.dist-info/bar",
-            "foo-1.0.dist-info/bar",
+            os.path.join("foo-100.dist-info", "bar"),
+            os.path.join("Foo-1.0.dist-info", "bar"),
+            os.path.join("foo-1.0.dist-info", "bar"),
         ],
     )
 
@@ -332,4 +332,5 @@ def test_find_dist_info_file():
             "foo-1.0rc0.dist-info/direct_url.json",
             "stress__-.-__Test-1.0rc0.dist-info/direct_url.json",
         ],
+        is_zip_listing=True,
     )

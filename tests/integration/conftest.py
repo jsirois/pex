@@ -4,14 +4,23 @@
 from __future__ import absolute_import
 
 import os
-import subprocess
 from contextlib import contextmanager
 from textwrap import dedent
 
 import pytest
 
-from pex.common import atomic_directory, safe_mkdtemp, temporary_dir
-from pex.testing import PY310, ensure_python_venv, make_env, run_pex_command
+from pex.atomic_directory import atomic_directory
+from pex.common import safe_mkdtemp, temporary_dir
+from pex.os import WINDOWS
+from pex.testing import (
+    PY310,
+    ensure_python_venv,
+    make_env,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -55,7 +64,7 @@ def pex_bdist(
                 args=[pex_project_dir, "-o", pex_pex, "--include-tools"]
             ).assert_success()
             extract_dir = os.path.join(chroot.work_dir, "wheels_dir")
-            subprocess.check_call(
+            pex_check_call(
                 args=[pex_pex, "repository", "extract", "-f", extract_dir],
                 env=make_env(PEX_TOOLS=True),
             )
@@ -119,7 +128,7 @@ def mitmdump():
             zstandard==0.14.1
             """
         )
-    subprocess.check_call([pip, "install", "mitmproxy==5.3.0", "--constraint", fp.name])
+    pex_check_call([pip, "install", "mitmproxy==5.3.0", "--constraint", fp.name])
     mitmdump = os.path.join(os.path.dirname(python), "mitmdump")
     return mitmdump, os.path.expanduser("~/.mitmproxy/mitmproxy-ca-cert.pem")
 
@@ -153,12 +162,12 @@ def run_proxy(mitmdump, tmp_workdir):
         proxy_auth=None,  # type: Optional[str]
     ):
         # type: (...) -> Iterator[Tuple[int, str]]
-        os.mkfifo(messages)
+        getattr(os, "mkfifo")(messages)
         proxy, ca_cert = mitmdump
         args = [proxy, "-p", "0", "-s", addon]
         if proxy_auth:
             args.extend(["--proxyauth", proxy_auth])
-        proxy_process = subprocess.Popen(args)
+        proxy_process = pex_popen(args)
         try:
             with open(messages, "r") as fp:
                 port = int(fp.readline().strip())
@@ -180,11 +189,9 @@ def clone(tmpdir):
     ):
         project_dir = os.path.join(str(tmpdir), "project")
 
-        subprocess.check_call(args=["git", "clone", git_project_url, project_dir])
-        subprocess.check_call(
-            args=["git", "config", "advice.detachedHead", "false"], cwd=project_dir
-        )
-        subprocess.check_call(args=["git", "checkout", commit], cwd=project_dir)
+        pex_check_call(args=["git", "clone", git_project_url, project_dir])
+        pex_check_call(args=["git", "config", "advice.detachedHead", "false"], cwd=project_dir)
+        pex_check_call(args=["git", "checkout", commit], cwd=project_dir)
         return project_dir
 
     return _clone

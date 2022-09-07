@@ -4,11 +4,13 @@
 from __future__ import absolute_import
 
 import os
+import posixpath
 import zipfile
 from abc import abstractmethod
 from contextlib import contextmanager
 
-from pex.common import atomic_directory, is_script, open_zip, safe_copy, safe_mkdir
+from pex.atomic_directory import atomic_directory
+from pex.common import is_script, open_zip, safe_copy, safe_mkdir
 from pex.enum import Enum
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
@@ -135,7 +137,10 @@ def _install(
 
                     for location, sha in pex_info.distributions.items():
                         spread_dest = os.path.join(pex_info.install_cache, sha, location)
-                        dist_relpath = os.path.join(DEPS_DIR, location)
+                        # TODO(John Sirois): XXX
+                        dist_relpath = posixpath.join(
+                            DEPS_DIR, location
+                        )  # os.path.join(DEPS_DIR, location)
                         with atomic_directory(
                             spread_dest,
                             source=layout.dist_strip_prefix(location),

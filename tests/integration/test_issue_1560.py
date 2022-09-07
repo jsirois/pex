@@ -2,7 +2,6 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 
 import pytest
 
@@ -11,6 +10,7 @@ from pex.testing import (
     IntegResults,
     ensure_python_venv,
     make_source_dir,
+    pex_check_call,
     run_pex_command,
 )
 from pex.typing import TYPE_CHECKING
@@ -42,13 +42,13 @@ def test_build_isolation(
     pyproject = toml.load(os.path.join(pex_project_dir, "pyproject.toml"))
     build_requirements = pyproject["build-system"]["requires"]
     assert len(build_requirements) > 0
-    subprocess.check_call(args=[pip, "install"] + build_requirements)
+    pex_check_call(args=[pip, "install"] + build_requirements)
 
     pex = os.path.join(str(tmpdir), "pex")
     run_pex_command(
         args=[pex_project_dir, "--no-build-isolation", "-o", pex], python=python
     ).assert_success()
-    subprocess.check_call(args=[python, pex, "-c", "import pex"])
+    pex_check_call(args=[python, pex, "-c", "import pex"])
 
 
 def test_pep_517_for_pep_517_project(pex_project_dir):

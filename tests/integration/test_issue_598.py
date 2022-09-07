@@ -2,10 +2,9 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 
 from pex.common import temporary_dir
-from pex.testing import make_env, run_pex_command
+from pex.testing import make_env, pex_check_call, run_pex_command
 
 
 def test_force_local_implicit_ns_packages():
@@ -15,7 +14,7 @@ def test_force_local_implicit_ns_packages():
         tcl_pex = os.path.join(out, "tcl.pex")
         run_pex_command(["twitter.common.lang==0.3.9", "-o", tcl_pex])
 
-        subprocess.check_call(
+        pex_check_call(
             [tcl_pex, "-c", "from twitter.common.lang import Singleton"],
             env=make_env(PEX_FORCE_LOCAL="1", PEX_PATH=tcl_pex),
         )

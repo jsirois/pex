@@ -2,12 +2,11 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 
 import pytest
 
 from pex.common import temporary_dir
-from pex.testing import IS_PYPY, run_pex_command
+from pex.testing import IS_PYPY, pex_check_call, run_pex_command
 
 
 @pytest.mark.skipif(
@@ -30,4 +29,4 @@ def test_devendoring_required():
         res = run_pex_command(["cryptography==2.5", "-o", cryptography_pex])
         res.assert_success()
 
-        subprocess.check_call([cryptography_pex, "-c", "import cryptography"])
+        pex_check_call([cryptography_pex, "-c", "import cryptography"])

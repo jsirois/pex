@@ -11,8 +11,9 @@ from multiprocessing.pool import ThreadPool
 
 from pex import resolver
 from pex.auth import PasswordDatabase, PasswordEntry
-from pex.common import FileLockStyle, pluralize
+from pex.common import pluralize
 from pex.compatibility import cpu_count
+from pex.fs.lock import FileLockStyle
 from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
 from pex.pep_503 import ProjectName

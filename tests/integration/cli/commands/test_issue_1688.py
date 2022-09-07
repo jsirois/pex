@@ -2,13 +2,12 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 
 from pex.cli.testing import run_pex3
 from pex.interpreter import PythonInterpreter
 from pex.pex_info import PexInfo
 from pex.resolve.lockfile import json_codec
-from pex.testing import run_pex_command
+from pex.testing import pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -63,4 +62,4 @@ def test_multiplatform_sdist(
         PexInfo.from_pex(pex).distributions
     ), "Expected a unique platform-specific wheel to be built for each interpreter"
     for interp in all_interpreters:
-        subprocess.check_call(args=[interp.binary, pex, "-c", "import psutil"])
+        pex_check_call(args=[interp.binary, pex, "-c", "import psutil"])

@@ -6,7 +6,6 @@ from __future__ import absolute_import
 import errno
 import json
 import os
-import subprocess
 from textwrap import dedent
 from typing import Any, Callable, List
 
@@ -15,7 +14,7 @@ import pytest
 
 from pex.cli.testing import run_pex3
 from pex.common import chmod_plus_x, touch
-from pex.testing import IS_PYPY, run_pex_command
+from pex.testing import IS_PYPY, pex_call, pex_check_call, pex_check_output, run_pex_command
 from pex.version import __version__
 
 
@@ -111,7 +110,7 @@ def shebang_length_limit(
             fp.write("exit 0\n")
         chmod_plus_x(script)
         try:
-            return 0 != subprocess.call(args=[script])
+            return 0 != pex_call(args=[script])
         except OSError as e:
             if e.errno == errno.ENOEXEC:
                 return True
@@ -211,7 +210,7 @@ def test_shebang_length_limit_runtime(
 
     def assert_pex_works(pex_file):
         assert (
-            subprocess.check_output(args=[pex_file] + test_pex_args)
+            pex_check_output(args=[pex_file] + test_pex_args)
             .decode("utf8")
             .startswith(too_deep_pex_root)
         )
@@ -219,7 +218,7 @@ def test_shebang_length_limit_runtime(
     if "--venv" in execution_mode_args:
         # Running the venv pex directly should fail since the shebang length is too long.
         with pytest.raises(OSError) as exc_info:
-            subprocess.check_call(args=[seeded_pex] + test_pex_args)
+            pex_check_call(args=[seeded_pex] + test_pex_args)
         assert exc_info.value.errno == errno.ENOEXEC
     else:
         assert_pex_works(seeded_pex)
@@ -249,7 +248,7 @@ def test_shebang_length_limit_buildtime_resolve(
 
     assert (
         colors.cyan("Jane")
-        == subprocess.check_output(args=[pex, "-c", "import colors; print(colors.cyan('Jane'))"])
+        == pex_check_output(args=[pex, "-c", "import colors; print(colors.cyan('Jane'))"])
         .decode("utf-8")
         .strip()
     )
@@ -294,7 +293,7 @@ def test_shebang_length_limit_buildtime_lock_local_project(
 
     assert (
         colors.yellow(__version__)
-        == subprocess.check_output(
+        == pex_check_output(
             args=[
                 pex,
                 "-c",

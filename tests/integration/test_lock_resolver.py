@@ -17,13 +17,23 @@ from pex import dist_metadata
 from pex.cli.testing import run_pex3
 from pex.common import safe_open
 from pex.dist_metadata import ProjectNameAndVersion
+from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pex_info import PexInfo
 from pex.resolve.locked_resolve import LockedRequirement
 from pex.resolve.lockfile import json_codec
-from pex.testing import IS_PYPY, PY_VER, built_wheel, make_env, run_pex_command
+from pex.testing import (
+    IS_PYPY,
+    PY_VER,
+    built_wheel,
+    make_env,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper
 
@@ -173,7 +183,7 @@ def requests_lock_findlinks(
     # type: (...) -> LockAndRepo
 
     find_links_repo = str(tmpdir_factory.mktemp("repo"))
-    subprocess.check_call(
+    pex_check_call(
         args=[requests_tool_pex, "repository", "extract", "-f", find_links_repo],
         env=make_env(PEX_TOOLS=1),
     )
@@ -350,11 +360,11 @@ def test_issue_1413_portable_find_links(tmpdir):
     ).assert_success()
     assert (
         colors.blue("Relocatable!")
-        == subprocess.check_output(args=[repository_pex]).decode("utf-8").strip()
+        == pex_check_output(args=[repository_pex]).decode("utf-8").strip()
     )
 
     original_find_links = os.path.join(str(tmpdir), "find-links", "original")
-    subprocess.check_call(
+    pex_check_call(
         args=[repository_pex, "repository", "extract", "--sources", "-f", original_find_links],
         env=make_env(PEX_TOOLS=1),
     )
@@ -383,7 +393,7 @@ def test_issue_1413_portable_find_links(tmpdir):
     # Now simulate using the portable lock file on another machine where the find-links repo is
     # mounted at a different absolute path than it was when creating the lock.
     moved_find_links = os.path.join(str(tmpdir), "find-links", "moved")
-    os.rename(original_find_links, moved_find_links)
+    safe_rename(original_find_links, moved_find_links)
     assert not os.path.exists(original_find_links)
 
     result = run_pex_command(
@@ -492,7 +502,7 @@ def test_issue_1717_transitive_extras(
     assert_requirements(pex_info)
     assert_dists(pex_info, "root", "middle_man_with_extras", "A", "B", "C")
 
-    process = subprocess.Popen(args=[python] + test_pex_args, stderr=subprocess.PIPE)
+    process = pex_popen(args=[python] + test_pex_args, stderr=subprocess.PIPE)
     _, stderr = process.communicate()
     assert 0 != process.returncode
 
@@ -522,4 +532,4 @@ def test_issue_1717_transitive_extras(
     pex_info = PexInfo.from_pex(pex)
     assert_requirements(pex_info)
     assert_dists(pex_info, "root", "middle_man_with_extras", "A", "extra1", "B", "extra2", "C")
-    subprocess.check_call(args=test_pex_args)
+    pex_check_call(args=test_pex_args)

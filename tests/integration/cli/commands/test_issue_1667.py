@@ -2,14 +2,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 import sys
 
 import pytest
 
 from pex.cli.testing import run_pex3
 from pex.interpreter import PythonInterpreter
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -78,7 +77,7 @@ def test_interpreter_constraints_range_coverage(
     def assert_pex_works(python):
         # type: (str) -> None
         assert (
-            subprocess.check_output(
+            pex_check_output(
                 args=[python, ipython_pex, "-c", "import IPython; print(IPython.__file__)"]
             )
             .decode("utf-8")

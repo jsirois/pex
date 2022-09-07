@@ -2,11 +2,10 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 from textwrap import dedent
 
 from pex.common import safe_open
-from pex.testing import make_project, run_pex_command
+from pex.testing import make_project, pex_check_output, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -47,13 +46,13 @@ def test_script(tmpdir):
     ) as project:
 
         run_pex_command(args=[project, "-c", "my_app", "-o", pex]).assert_success()
-        assert b"hello world!\n" == subprocess.check_output(args=[pex])
+        assert b"hello world!\n" == pex_check_output(args=[pex])
 
         run_pex_command(args=[project, "-c", "hello_world", "-o", pex]).assert_success()
-        assert b"hello world from py script!\n" == subprocess.check_output(args=[pex])
+        assert b"hello world from py script!\n" == pex_check_output(args=[pex])
 
         run_pex_command(args=[project, "-c", "shell_script", "-o", pex]).assert_success()
-        assert b"hello world from shell script\n" == subprocess.check_output(args=[pex])
+        assert b"hello world from shell script\n" == pex_check_output(args=[pex])
 
 
 def test_entry_point(tmpdir):
@@ -86,13 +85,13 @@ def test_entry_point(tmpdir):
     pex = os.path.join(str(tmpdir), "pex")
 
     run_pex_command(args=["-D", src, "-m", "my_ep", "-o", pex]).assert_success()
-    assert 21 == subprocess.Popen(args=[pex]).wait()
+    assert 21 == pex_popen(args=[pex]).wait()
 
     run_pex_command(args=["-D", src, "-e", "my_ep", "-o", pex]).assert_success()
-    assert 21 == subprocess.Popen(args=[pex]).wait()
+    assert 21 == pex_popen(args=[pex]).wait()
 
     run_pex_command(args=["-D", src, "-e", "my_ep:constant", "-o", pex]).assert_success()
-    assert 42 == subprocess.Popen(args=[pex]).wait()
+    assert 42 == pex_popen(args=[pex]).wait()
 
 
 def test_executable(tmpdir):
@@ -121,4 +120,4 @@ def test_executable(tmpdir):
 
     pex = os.path.join(str(tmpdir), "pex")
     run_pex_command(args=["-D", src, "--executable", executable, "-o", pex]).assert_success()
-    assert 42 == subprocess.Popen(args=[pex]).wait()
+    assert 42 == pex_popen(args=[pex]).wait()

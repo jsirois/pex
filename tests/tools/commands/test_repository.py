@@ -15,7 +15,16 @@ import pytest
 
 from pex.common import DETERMINISTIC_DATETIME, open_zip, safe_open, temporary_dir
 from pex.dist_metadata import Distribution, Requirement
-from pex.testing import PY310, ensure_python_venv, run_command_with_jitter, run_pex_command
+from pex.os import WINDOWS
+from pex.testing import (
+    PY310,
+    ensure_python_venv,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_command_with_jitter,
+    run_pex_command,
+)
 from pex.third_party.packaging.specifiers import SpecifierSet
 from pex.typing import TYPE_CHECKING
 
@@ -88,7 +97,7 @@ def pex_tools_env():
 
 def test_info(pex, pex_tools_env):
     # type: (str, Dict[str, str]) -> None
-    output = subprocess.check_output(args=[pex, "repository", "info"], env=pex_tools_env)
+    output = pex_check_output(args=[pex, "repository", "info"], env=pex_tools_env)
     distributions = {}
     for line in output.decode("utf-8").splitlines():
         name, version, location = str(line).split(" ", 2)
@@ -103,7 +112,7 @@ def test_info(pex, pex_tools_env):
 
 def test_info_verbose(pex, pex_tools_env):
     # type: (str, Dict[str, str]) -> None
-    output = subprocess.check_output(args=[pex, "repository", "info", "-v"], env=pex_tools_env)
+    output = pex_check_output(args=[pex, "repository", "info", "-v"], env=pex_tools_env)
     infos = {}
     for line in output.decode("utf-8").splitlines():
         info = json.loads(line)
@@ -146,7 +155,7 @@ def test_extract_deterministic_timestamp(pex, pex_tools_env, tmpdir):
     )
 
     deterministic_dists_dir = os.path.join(str(tmpdir), "deterministic-dists")
-    subprocess.check_call(
+    pex_check_call(
         args=[pex, "repository", "extract", "-f", deterministic_dists_dir], env=pex_tools_env
     )
     with open_zip(
@@ -158,7 +167,7 @@ def test_extract_deterministic_timestamp(pex, pex_tools_env, tmpdir):
             assert deterministic_date_time == info.date_time
 
     non_deterministic_dists_dir = os.path.join(str(tmpdir), "non_deterministic_dists_dir")
-    subprocess.check_call(
+    pex_check_call(
         args=[pex, "repository", "extract", "-f", non_deterministic_dists_dir, "--use-system-time"],
         env=pex_tools_env,
     )
@@ -211,12 +220,13 @@ def test_extract_deterministic_wheels(pex, pex_tools_env):
         assert sorted(dists1) == sorted(same)
 
 
+@pytest.mark.skipif(WINDOWS, reason="Windows does not have os.mkfifo or signal.SIGQUIT.")
 def test_extract_lifecycle(pex, pex_tools_env, tmpdir):
     # type: (str, Dict[str, str], Any) -> None
     dists_dir = os.path.join(str(tmpdir), "dists")
     pid_file = os.path.join(str(tmpdir), "pid")
-    os.mkfifo(pid_file)
-    find_links_server = subprocess.Popen(
+    getattr(os, "mkfifo")(pid_file)
+    find_links_server = pex_popen(
         args=[
             pex,
             "repository",
@@ -250,14 +260,13 @@ def test_extract_lifecycle(pex, pex_tools_env, tmpdir):
     result.assert_success()
 
     _, pip = ensure_python_venv(PY310)
-    subprocess.check_call(
-        args=[pip, "install", "--no-index", "--find-links", find_links_url, "example"]
-    )
+    pex_check_call(args=[pip, "install", "--no-index", "--find-links", find_links_url, "example"])
     example_console_script = os.path.join(os.path.dirname(pip), "example")
 
-    find_links_server.send_signal(signal.SIGQUIT)
-    assert -1 * int(signal.SIGQUIT) == find_links_server.wait()
+    sigquit = getattr(signal, "SIGQUIT")
+    find_links_server.send_signal(sigquit)
+    assert -1 * int(sigquit) == find_links_server.wait()
 
     expected_output = b"Fetching from https://example.com ...\n"
-    assert expected_output == subprocess.check_output(args=[example_sdist_pex])
-    assert expected_output == subprocess.check_output(args=[example_console_script])
+    assert expected_output == pex_check_output(args=[example_sdist_pex])
+    assert expected_output == pex_check_output(args=[example_console_script])

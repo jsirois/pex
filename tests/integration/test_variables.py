@@ -2,13 +2,12 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 
 import pytest
 
 from pex.layout import Layout
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -48,7 +47,7 @@ def test_pex_variable_always_defined_at_runtime(
     run_pex_args = [pex_pex] if Layout.ZIPAPP == layout else [sys.executable, pex_pex]
     assert (
         os.path.realpath(pex_pex)
-        == subprocess.check_output(
+        == pex_check_output(
             args=run_pex_args + ["-c", "from pex.variables import ENV; print(ENV.PEX)"]
         )
         .decode("utf-8")

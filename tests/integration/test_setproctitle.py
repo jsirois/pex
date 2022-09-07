@@ -1,7 +1,6 @@
 # Copyright 2022 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 import os.path
-import subprocess
 import sys
 from textwrap import dedent
 from typing import Text
@@ -12,14 +11,16 @@ from pex import variables
 from pex.common import safe_open
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
+from pex.os import WINDOWS
 from pex.pex_info import PexInfo
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Any, Tuple
 
 
+@pytest.mark.skipif(WINDOWS, reason="Windows does not have os.mkfifo.")
 @pytest.mark.parametrize("venv", [pytest.param(True, id="VENV"), pytest.param(False, id="UNZIP")])
 @pytest.mark.parametrize(
     "layout", [pytest.param(layout, id=layout.value) for layout in Layout.values()]
@@ -32,7 +33,7 @@ def test_setproctitle(
     # type: (...) -> None
 
     pid_file = os.path.join(str(tmpdir), "pid")
-    os.mkfifo(pid_file)
+    getattr(os, "mkfifo")(pid_file)
 
     src = os.path.join(str(tmpdir), "src")
     with safe_open(os.path.join(src, "app.py"), "w") as fp:
@@ -69,7 +70,7 @@ def test_setproctitle(
         # type: (...) -> Tuple[Text, Text]
         run_pex_command(args=build_pex_args + ["-o", pex] + list(extra_pex_args)).assert_success()
 
-        process = subprocess.Popen(args=[sys.executable, pex, "--some", "arguments", "here"])
+        process = pex_popen(args=[sys.executable, pex, "--some", "arguments", "here"])
         try:
             # N.B.: We need to block on receiving the pid via fifo to prove that the PEX runtime has
             # finished booting and completed any and all re-execs and landed in user code.
@@ -77,9 +78,7 @@ def test_setproctitle(
                 assert process.pid == int(fp.read().strip())
 
             exe, args = (
-                subprocess.check_output(
-                    args=["ps", "-p", str(process.pid), "-o", "command=", "-ww"]
-                )
+                pex_check_output(args=["ps", "-p", str(process.pid), "-o", "command=", "-ww"])
                 .decode("utf-8")
                 .strip()
                 .split(" ", 1)

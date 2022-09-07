@@ -15,7 +15,8 @@ from site import makepath  # type: ignore[attr-defined]
 from zipfile import ZipFile
 
 from pex import hashing
-from pex.common import atomic_directory, filter_pyc_dirs, filter_pyc_files, safe_mkdir, safe_mkdtemp
+from pex.atomic_directory import atomic_directory
+from pex.common import filter_pyc_dirs, filter_pyc_files, safe_mkdir, safe_mkdtemp
 from pex.compatibility import (  # type: ignore[attr-defined]  # `exec_function` is defined dynamically
     PY2,
     exec_function,

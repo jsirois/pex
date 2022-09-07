@@ -2,9 +2,16 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 
-from pex.testing import PY37, ensure_python_interpreter, make_env, pex_project_dir, run_pex_command
+from pex.testing import (
+    PY37,
+    ensure_python_interpreter,
+    make_env,
+    pex_check_call,
+    pex_check_output,
+    pex_project_dir,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -26,7 +33,7 @@ def assert_venv_runtime_env_vars_ignored_during_create(
     py37 = ensure_python_interpreter(PY37)
     pex_root = os.path.join(str(tmpdir), "pex_root")
     lock = os.path.join(str(tmpdir), "lock.json")
-    subprocess.check_call(
+    pex_check_call(
         args=[
             py37,
             pex_pex,
@@ -41,7 +48,7 @@ def assert_venv_runtime_env_vars_ignored_during_create(
         env=make_env(PEX_SCRIPT="pex3"),
     )
     ansicolors_path = (
-        subprocess.check_output(
+        pex_check_output(
             args=[
                 py37,
                 pex_pex,

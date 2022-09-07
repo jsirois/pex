@@ -4,7 +4,8 @@ import re
 
 import pytest
 
-from pex.common import AtomicDirectory, PermPreservingZipFile
+from pex.atomic_directory import AtomicDirectory
+from pex.common import PermPreservingZipFile
 from pex.compatibility import PY2
 from pex.enum import Enum, qualified_name
 

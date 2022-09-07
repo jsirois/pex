@@ -2,14 +2,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 
 import pytest
 
 from pex.interpreter import PythonInterpreter
 from pex.pex_info import PexInfo
-from pex.testing import IS_PYPY, PY_VER, make_env, run_pex_command
+from pex.testing import IS_PYPY, PY_VER, make_env, pex_check_call, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -55,7 +54,7 @@ def run_current_pex_tool(
 ):
     # type: (...) -> Text
 
-    return subprocess.check_output(
+    return pex_check_output(
         args=[sys.executable, "-m", "pex.tools", subject_pex, subcommand] + list(args)
     ).decode("utf-8")
 
@@ -67,7 +66,7 @@ def run_pex_tool(
     *args  # type: str
 ):
     # type: (...) -> Text
-    return subprocess.check_output(
+    return pex_check_output(
         args=[pex_pex, subject_pex, subcommand] + list(args), env=make_env(PEX_MODULE="pex.tools")
     ).decode("utf-8")
 
@@ -84,7 +83,7 @@ def test_old_venv_tool_vs_new_pex(
 
     venv = os.path.join(str(tmpdir), "venv")
     run_pex_tool(old_pex, pex_app, "venv", "--force", venv)
-    assert b"4.0\n" == subprocess.check_output(args=[os.path.join(venv, "pex"), "--version"])
+    assert b"4.0\n" == pex_check_output(args=[os.path.join(venv, "pex"), "--version"])
 
 
 @skip_for_old_pex_unsupported_pythons
@@ -95,11 +94,11 @@ def test_new_venv_tool_vs_old_pex(
     # type: (...) -> None
 
     pex_app = os.path.join(str(tmpdir), "app.pex")
-    subprocess.check_call(args=[old_pex, "cowsay==4.0", "-c" "cowsay", "-o", pex_app])
+    pex_check_call(args=[old_pex, "cowsay==4.0", "-c" "cowsay", "-o", pex_app])
 
     venv = os.path.join(str(tmpdir), "venv")
     run_current_pex_tool(pex_app, "venv", "--force", venv)
-    assert b"4.0\n" == subprocess.check_output(args=[os.path.join(venv, "pex"), "--version"])
+    assert b"4.0\n" == pex_check_output(args=[os.path.join(venv, "pex"), "--version"])
 
 
 @skip_for_old_pex_unsupported_pythons
@@ -139,24 +138,24 @@ def test_mixed_pex_root(
         return os.path.join(venv_dir, "include", "site", "python3.7", "greenlet", "greenlet.h")
 
     pex_app_old = os.path.join(str(tmpdir), "app.old.pex")
-    subprocess.check_call(args=create_pex_args(old_pex, "-o", pex_app_old))
+    pex_check_call(args=create_pex_args(old_pex, "-o", pex_app_old))
 
     pex_app_new = os.path.join(str(tmpdir), "app.new.pex")
     run_pex_command(args=create_pex_args("-o", pex_app_new, "--venv")).assert_success()
 
-    subprocess.check_call(
+    pex_check_call(
         args=[sys.executable, pex_app_old, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True, PEX_VENV=False),
     )
-    subprocess.check_call(
+    pex_check_call(
         args=[sys.executable, pex_app_new, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True, PEX_VENV=False),
     )
-    subprocess.check_call(
+    pex_check_call(
         args=[sys.executable, pex_app_old, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True),
     )
-    subprocess.check_call(
+    pex_check_call(
         args=[sys.executable, pex_app_new, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True),
     )
@@ -165,7 +164,7 @@ def test_mixed_pex_root(
     assert py37_venv_dir_old is not None
     assert not os.path.exists(py37_venv_dir_old)
 
-    subprocess.check_call(
+    pex_check_call(
         args=[py37.binary, pex_app_old, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True),
     )
@@ -175,7 +174,7 @@ def test_mixed_pex_root(
     assert py37_venv_dir_new is not None
     assert not os.path.exists(py37_venv_dir_new)
 
-    subprocess.check_call(
+    pex_check_call(
         args=[py37.binary, pex_app_new, "-c", "import greenlet"],
         env=make_env(PEX_IGNORE_ERRORS=True),
     )

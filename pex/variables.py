@@ -562,7 +562,7 @@ class Variables(object):
         )
         return self._maybe_get_path_tuple("PEX_EXTRA_SYS_PATH") or ()
 
-    @defaulted_property(default="~/.pex")
+    @defaulted_property(default=os.path.join("~", ".pex"))
     def PEX_ROOT(self):
         # type: () -> str
         """Directory.

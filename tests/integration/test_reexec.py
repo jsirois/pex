@@ -3,7 +3,6 @@
 
 import json
 import os
-import subprocess
 import sys
 from textwrap import dedent
 
@@ -16,6 +15,7 @@ from pex.testing import (
     PY310,
     ensure_python_interpreter,
     make_env,
+    pex_check_output,
     run_pex_command,
     run_simple_pex,
 )
@@ -68,7 +68,7 @@ def _assert_exec_chain(
         )
 
         initial_interpreter = PythonInterpreter.get()
-        output = subprocess.check_output(
+        output = pex_check_output(
             [
                 initial_interpreter.binary,
                 test_pex,
@@ -191,7 +191,7 @@ def test_pex_re_exec_failure():
                     else:
                         env = os.environ.copy()
                         env['RAN_ONCE'] = '1'
-                        subprocess.call([sys.executable] + sys.argv, env=env)
+                        pex_call([sys.executable] + sys.argv, env=env)
                         sys.exit()
                     """
                 )

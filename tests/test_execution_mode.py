@@ -4,14 +4,13 @@
 from __future__ import absolute_import
 
 import os.path
-import subprocess
 import sys
 from subprocess import CalledProcessError
 
 import pytest
 
 from pex.layout import Layout
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -46,7 +45,7 @@ def execute_colors_pex(tmpdir):
         env.update(extra_env)
         env["PEX_ROOT"] = pex_root
         args = [colors_pex] if os.path.isfile(colors_pex) else [sys.executable, colors_pex]
-        output = subprocess.check_output(
+        output = pex_check_output(
             args=args + ["-c", "import colors; print(colors.__file__)"], env=env
         )
         return output.strip().decode("utf-8"), pex_root
@@ -63,7 +62,11 @@ class ExecutionMode(object):
 
 def installed_wheels_or_deps(layout):
     # type: (Layout.Value) -> str
-    return "{app_root}/.deps/" if layout == Layout.LOOSE else "{pex_root}/installed_wheels/"
+    return (
+        os.path.join("{app_root}", ".deps", "")
+        if layout == Layout.LOOSE
+        else os.path.join("{pex_root}", "installed_wheels", "")
+    )
 
 
 @pytest.mark.parametrize(
@@ -88,7 +91,7 @@ def installed_wheels_or_deps(layout):
         pytest.param(
             ExecutionMode(
                 extra_args=["--venv"],
-                isort_code_dir=lambda _: "{pex_root}/venvs/",
+                isort_code_dir=lambda _: os.path.join("{pex_root}", "venvs", ""),
                 venv_exception_expected=False,
             ),
             id="VENV",
@@ -110,7 +113,7 @@ def test_execution_mode(
     output, pex_root = execute_colors_pex(pex_app, {})
     assert output.startswith(
         execution_mode.isort_code_dir(layout).format(app_root=pex_app, pex_root=pex_root),
-    )
+    ), output
 
     if execution_mode.venv_exception_expected:
         with pytest.raises(CalledProcessError):

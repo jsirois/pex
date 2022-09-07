@@ -142,7 +142,7 @@ if PY3:
         def cpu_count():
             # type: () -> Optional[int]
             # The set of CPUs accessible to the current process (pid 0).
-            cpu_set = os.sched_getaffinity(0)
+            cpu_set = getattr(os, "sched_getaffinity")(0)
             return len(cpu_set)
 
 else:

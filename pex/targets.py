@@ -4,6 +4,7 @@
 from __future__ import absolute_import
 
 import os
+import sys
 
 from pex.dist_metadata import Requirement
 from pex.interpreter import PythonInterpreter, calculate_binary_name

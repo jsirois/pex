@@ -2,14 +2,13 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 from textwrap import dedent
 
 import pytest
 
 from pex.common import safe_open
 from pex.layout import Layout
-from pex.testing import run_pex_command
+from pex.testing import pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -77,6 +76,4 @@ def test_execute_module_alter_sys(
     run_pex_command(
         args=["-D", src_dir, "-o", pex_app] + list(entry_point_args.build_args)
     ).assert_success()
-    assert expected_output == subprocess.check_output(
-        args=[pex_app] + list(entry_point_args.run_args)
-    )
+    assert expected_output == pex_check_output(args=[pex_app] + list(entry_point_args.run_args))

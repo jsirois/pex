@@ -8,6 +8,7 @@ import functools
 import glob
 import importlib
 import os
+import posixpath
 import re
 import sys
 import tarfile
@@ -99,8 +100,8 @@ def _parse_sdist_package_info(sdist_path):
     if sdist_filename is None:
         return None
 
-    pkg_info_path = os.path.join(sdist_filename, "PKG-INFO")
-
+    # TODO(John Sirois): XXX: Does '/' always apply? It does for .zip but what about .tar(.gz)?
+    pkg_info_path = posixpath.join(sdist_filename, "PKG-INFO")
     if zipfile.is_zipfile(sdist_path):
         with open_zip(sdist_path) as zip:
             try:
@@ -143,6 +144,7 @@ class DistMetadataFile(object):
 def find_dist_info_files(
     filename,  # type: Text
     listing,  # type: Iterable[str]
+    is_zip_listing=False,  # type: bool
 ):
     # type: (...) -> Iterator[DistMetadataFile]
 
@@ -151,8 +153,13 @@ def find_dist_info_files(
     # circumstances. This is since we're limiting ourselves to the products of installs by our
     # vendored versions of wheel and pip which turn `-` into `_` as explained in `ProjectName` and
     # `Version` docs.
-    dist_info_metadata_pattern = "^{}$".format(
-        os.path.join(r"(?P<project_name>.+)-(?P<version>.+)\.dist-info", re.escape(filename))
+    suffix = (
+        posixpath.join(".dist-info", filename)
+        if is_zip_listing
+        else os.path.join(".dist-info", filename)
+    )
+    dist_info_metadata_pattern = r"^(?P<project_name>.+)-(?P<version>.+){}$".format(
+        re.escape(suffix)
     )
     wheel_metadata_re = re.compile(dist_info_metadata_pattern)
     for item in listing:
@@ -170,6 +177,7 @@ def find_dist_info_file(
     filename,  # type: Text
     listing,  # type: Iterable[str]
     version=None,  # type: Optional[Union[Text, Version]]
+    is_zip_listing=False,  # type: bool
 ):
     # type: (...) -> Optional[str]
 
@@ -184,7 +192,7 @@ def find_dist_info_file(
     else:
         normalized_version = None
 
-    for metadata_file in find_dist_info_files(filename, listing):
+    for metadata_file in find_dist_info_files(filename, listing, is_zip_listing=is_zip_listing):
         if normalized_project_name == metadata_file.project_name:
             if normalized_version and normalized_version != metadata_file.version:
                 continue
@@ -203,6 +211,7 @@ def _parse_wheel_package_info(wheel_path):
             version=version,
             filename="METADATA",
             listing=whl.namelist(),
+            is_zip_listing=True,
         )
         if not metadata_file:
             return None

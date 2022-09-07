@@ -2,7 +2,6 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
-import subprocess
 import sys
 from textwrap import dedent
 
@@ -11,7 +10,15 @@ import pytest
 
 from pex.common import safe_open
 from pex.layout import DEPS_DIR, Layout
-from pex.testing import IS_PYPY, PY27, PY_VER, ensure_python_interpreter, make_env, run_pex_command
+from pex.testing import (
+    IS_PYPY,
+    PY27,
+    PY_VER,
+    ensure_python_interpreter,
+    make_env,
+    pex_check_output,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -83,7 +90,7 @@ def test_import_from_pex(
     def execute_with_pex_on_pythonpath(code):
         # type: (str) -> Text
         return (
-            subprocess.check_output(args=[python, "-c", code], env=make_env(PYTHONPATH=pex))
+            pex_check_output(args=[python, "-c", code], env=make_env(PYTHONPATH=pex))
             .decode("utf-8")
             .strip()
         )

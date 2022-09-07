@@ -8,7 +8,7 @@ import pytest
 
 from pex.common import safe_open
 from pex.compatibility import PY2
-from pex.testing import run_pex_command
+from pex.testing import pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ def test_stderr_not_torn_down(tmpdir):
         )
     pex = os.path.join(str(tmpdir), "pex")
     run_pex_command(args=["absl-py==0.10.0", "--exe", exe, "-o", pex]).assert_success()
-    process = subprocess.Popen(args=[pex], stderr=subprocess.PIPE)
+    process = pex_popen(args=[pex], stderr=subprocess.PIPE)
     _, stderr = process.communicate()
     error = stderr.decode("utf-8")
     assert 0 == process.returncode

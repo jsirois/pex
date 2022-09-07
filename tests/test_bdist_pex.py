@@ -7,7 +7,15 @@ from contextlib import contextmanager
 from textwrap import dedent
 
 from pex.common import open_zip, safe_mkdtemp, temporary_dir
-from pex.testing import WheelBuilder, make_project, pex_project_dir, temporary_content
+from pex.os import WINDOWS
+from pex.testing import (
+    WheelBuilder,
+    make_project,
+    pex_check_call,
+    pex_popen,
+    pex_project_dir,
+    temporary_content,
+)
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
 
@@ -36,8 +44,8 @@ def bdist_pex_venv():
         pip = venv.install_pip()
         # N.B.: The setuptools version is not important, but there is a break introduced by pip
         # 22.1; so we must pin that low.
-        subprocess.check_call(args=[pip, "install", "-U", "pip<22.1"])
-        subprocess.check_call(args=[pip, "install", pex_project_dir(), "setuptools==43.0.0"])
+        pex_check_call(args=[venv.interpreter.binary, "-m", "pip", "install", "-U", "pip<22.1"])
+        pex_check_call(args=[pip, "install", pex_project_dir(), "setuptools==43.0.0"])
         BDIST_PEX_VENV = venv
     return BDIST_PEX_VENV
 
@@ -57,8 +65,15 @@ def bdist_pex(project_dir, bdist_args=None):
             cmd.extend(bdist_args)
 
         venv = bdist_pex_venv()
-        _, process = venv.interpreter.open_process(args=cmd, cwd=project_dir)
-        process.wait()
+        _, process = venv.interpreter.open_process(
+            args=cmd, cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        stdout, stderr = process.communicate()
+        assert (
+            0 == process.returncode
+        ), "Command failed: {command}\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}".format(
+            command=" ".join(cmd), stdout=stdout.decode("utf-8"), stderr=stderr.decode("utf-8")
+        )
         yield [os.path.join(dist_dir, dir_entry) for dir_entry in os.listdir(dist_dir)]
 
 
@@ -67,11 +82,11 @@ def assert_entry_points(entry_points, bdist_args=None):
     with make_project(name="my_app", entry_points=entry_points) as project_dir:
         with bdist_pex(project_dir, bdist_args) as apps_pex:
             for app_pex in apps_pex:
-                process = subprocess.Popen([app_pex], stdout=subprocess.PIPE)
+                process = pex_popen([app_pex], stdout=subprocess.PIPE)
                 stdout, _ = process.communicate()
                 assert "{pex_root}" not in os.listdir(project_dir)
                 assert 0 == process.returncode
-                assert stdout == b"hello world!\n"
+                assert stdout == "hello world!{}".format(os.linesep).encode("utf-8")
                 yield os.path.basename(app_pex)
 
 
@@ -194,8 +209,9 @@ def test_unwriteable_contents():
         my_app_whl = WheelBuilder(my_app_project_dir).bdist()
 
         with make_project(name="uses_my_app", install_reqs=["my_app"]) as uses_my_app_project_dir:
+            find_links_dir = os.path.dirname(my_app_whl)
             pex_args = "--pex-args=--disable-cache --pip-version=vendored --no-pypi -f {}".format(
-                os.path.dirname(my_app_whl)
+                '"{}"'.format(find_links_dir) if WINDOWS else find_links_dir
             )
             with bdist_pex(uses_my_app_project_dir, bdist_args=[pex_args]) as (uses_my_app_pex,):
                 with open_zip(uses_my_app_pex) as zf:

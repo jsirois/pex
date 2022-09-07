@@ -8,8 +8,10 @@ import os
 
 from pex.common import is_python_script
 from pex.dist_metadata import Distribution, EntryPoint
+from pex.orderedset import OrderedSet
 from pex.pep_376 import InstalledWheel
 from pex.pep_503 import ProjectName
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -29,8 +31,12 @@ class DistributionScript(object):
         name,  # type: str
     ):
         # type: (...) -> Optional[DistributionScript]
-        script_path = InstalledWheel.load(dist.location).stashed_path("bin", name)
-        return cls(dist=dist, path=script_path) if os.path.isfile(script_path) else None
+        script_path = InstalledWheel.load(dist.location).stashed_path(SCRIPT_DIR, name)
+        # On Windows, the script could be an .exe or a plain .py file; so we try both.
+        for path in OrderedSet((script_path, script_name(script_path))):
+            if os.path.isfile(path):
+                return cls(dist=dist, path=path)
+        return None
 
     dist = attr.ib()  # type: Distribution
     path = attr.ib()  # type: str

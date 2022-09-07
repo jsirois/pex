@@ -9,8 +9,8 @@ import pytest
 from colors import yellow
 
 from pex.common import safe_open, touch
-from pex.testing import IS_PYPY3, make_env, run_pex_command
-from pex.typing import TYPE_CHECKING
+from pex.testing import make_env, pex_popen, run_pex_command
+from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from typing import Any, Iterable, List, Text
@@ -75,14 +75,14 @@ def execute_app(
 ):
     # type: (...) -> List[Text]
 
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[pex_file], env=make_env(**env), stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     stdout, stderr = process.communicate()
     stripped_stderr = stderr.decode("utf-8").strip()
     assert 0 == process.returncode, stripped_stderr
     assert yellow("*** Flashy UI ***") in stripped_stderr
-    return stdout.decode("utf-8").splitlines()
+    return cast("Text", stdout.decode("utf-8")).splitlines()
 
 
 def test_pex_path_dedup(tmpdir):
@@ -159,9 +159,7 @@ def test_pex_path_collision_conflicting(tmpdir):
         # type: (*str) -> None
 
         app = create_pex(tmpdir, extra_args=["--venv"] + list(extra_args))
-        process = subprocess.Popen(
-            args=[app], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        process = pex_popen(args=[app], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, stderr = process.communicate()
         decoded_stderr = stderr.decode("utf-8")
 

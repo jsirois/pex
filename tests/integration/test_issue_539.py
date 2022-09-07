@@ -3,13 +3,12 @@
 
 import glob
 import os
-import subprocess
 
 import pytest
 
 from pex.common import temporary_dir
 from pex.pip.installation import get_pip
-from pex.testing import IS_PYPY, PY_VER, run_pex_command
+from pex.testing import IS_PYPY, PY_VER, pex_check_call, run_pex_command
 
 
 @pytest.mark.skipif(
@@ -50,4 +49,4 @@ def test_abi3_resolution():
         )
         res.assert_success()
 
-        subprocess.check_call([cryptography_pex, "-c", "import cryptography"])
+        pex_check_call([cryptography_pex, "-c", "import cryptography"])

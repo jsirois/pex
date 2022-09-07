@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from pex.interpreter import PythonInterpreter
-from pex.testing import make_env
+from pex.testing import make_env, pex_check_output
 from pex.tools.commands import all_commands
 from pex.venv.virtualenv import Virtualenv
 from pex.version import __version__
@@ -33,7 +33,7 @@ def script_path(script_name):
 
 def test_pex_script():
     # type: () -> None
-    output = subprocess.check_output(
+    output = pex_check_output(
         args=[script_path("pex"), "--version"],
         # On Python 2.7 --version gets printed to stderr.
         stderr=subprocess.STDOUT,
@@ -51,6 +51,6 @@ def test_pex_tools_script():
     # Make sure we don't word-wrap for simplicity of testing.
     env = make_env(COLUMNS=len(expected_first_line) + 2)
 
-    output = subprocess.check_output(args=[script_path("pex-tools"), "-h"], env=env)
+    output = pex_check_output(args=[script_path("pex-tools"), "-h"], env=env)
     first_line = output.decode("utf-8").splitlines()[0]
     assert expected_first_line == first_line, output.decode("utf-8")

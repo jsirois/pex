@@ -7,17 +7,20 @@ import errno
 import itertools
 import os
 import shutil
-from collections import defaultdict, Counter
+import sys
+from collections import Counter, defaultdict
 from textwrap import dedent
 
 from pex import pex_warnings
-from pex.common import safe_mkdir, pluralize, chmod_plus_x
+from pex.common import chmod_plus_x, pluralize, safe_mkdir
 from pex.compatibility import is_valid_python_identifier
 from pex.dist_metadata import Distribution
 from pex.environment import PEXEnvironment
 from pex.orderedset import OrderedSet
+from pex.os import WINDOWS
 from pex.pep_376 import InstalledWheel, LoadError
 from pex.pex import PEX
+from pex.sysconfig import SCRIPT_DIR
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper
@@ -57,10 +60,14 @@ def _copytree(
             dirs[:] = [d for d in dirs if d not in exclude]
             files[:] = [f for f in files if f not in exclude]
 
-        for path, is_dir in itertools.chain(
-            zip(dirs, itertools.repeat(True)), zip(files, itertools.repeat(False))
-        ):
+        for path in itertools.chain(dirs, files):
             src_entry = os.path.join(root, path)
+            # N.B.: On Windows, symlinks to directories are reported in the files list by os.walk.
+            # Ensure we get the right characterization on WINDOWS by realpathing through to the
+            # underlying path.
+            is_dir = (
+                os.path.isdir(os.path.realpath(src_entry)) if WINDOWS else os.path.isdir(src_entry)
+            )
             dst_entry = os.path.join(dst, os.path.relpath(src_entry, src))
             if not is_dir:
                 yield src_entry, dst_entry
@@ -105,6 +112,9 @@ def populate_venv(
     scope=InstallScope.ALL,  # type: InstallScope.Value
 ):
     # type: (...) -> str
+
+    # TODO(John Sirois): XXX: Figure out why symlinks aren't working for WINDOWS
+    symlink = False if WINDOWS else symlink
 
     venv_python = python or venv.interpreter.binary
     shebang = "#!{} -sE".format(venv_python)
@@ -178,11 +188,11 @@ def _populate_legacy_dist(
     # just 1 top-level module, we keep .pyc anchored to their associated dists when shared
     # and accept the cost of re-compiling top-level modules in each venv that uses them.
     for src, dst in _copytree(
-        src=dist.location, dst=dst, exclude=("bin", "__pycache__"), symlink=symlink
+        src=dist.location, dst=dst, exclude=(SCRIPT_DIR, "__pycache__"), symlink=symlink
     ):
         yield src, dst
 
-    dist_bin_dir = os.path.join(dist.location, "bin")
+    dist_bin_dir = os.path.join(dist.location, SCRIPT_DIR)
     if os.path.isdir(dist_bin_dir):
         for src, dst in _copytree(src=dist_bin_dir, dst=venv.bin_dir, symlink=symlink):
             yield src, dst
@@ -231,9 +241,9 @@ def _populate_deps(
             packages = [
                 name
                 for name in os.listdir(dist.location)
-                if name not in ("bin", "__pycache__")
+                if name not in (SCRIPT_DIR, "__pycache__")
                    and is_valid_python_identifier(name)
-                   and os.path.isdir(os.path.join(dist.location, name))
+                   and os.path.isdir(os.path.realpath(os.path.join(dist.location, name)))
             ]
             count = max(top_level_packages[package] for package in packages) if packages else 0
             if count > 0:
@@ -326,9 +336,16 @@ def _populate_sources(
         if __name__ == "__main__":
             import os
             import sys
+            import sysconfig
+
+            WINDOWS = os.name == 'nt'
+            SCRIPTS_DIR = "Scripts" if WINDOWS else "bin"
+            
+            def script_name(name):
+                return name + (sysconfig.get_config_var("EXE") or "")
 
             venv_dir = os.path.abspath(os.path.dirname(__file__))
-            venv_bin_dir = os.path.join(venv_dir, "bin")
+            venv_bin_dir = os.path.join(venv_dir, SCRIPTS_DIR)
             shebang_python = {shebang_python!r}
             python = os.path.join(venv_bin_dir, os.path.basename(shebang_python))
 
@@ -358,6 +375,13 @@ def _populate_sources(
                         # of symlinks once; either way, we've found all valid venv python binaries.
                         break
                 return executables
+            
+            def safe_execv(argv):
+                if os.name == 'nt':
+                    import subprocess
+                    sys.exit(subprocess.call(argv))
+                else:
+                    os.execv(argv[0], argv)
 
             current_interpreter_blessed_env_var = "_PEX_SHOULD_EXIT_VENV_REEXEC"
             if (
@@ -366,7 +390,7 @@ def _populate_sources(
             ):
                 sys.stderr.write("Re-execing from {{}}\\n".format(sys.executable))
                 os.environ[current_interpreter_blessed_env_var] = "1"
-                os.execv(python, [python, "-sE"] + sys.argv)
+                safe_execv([python, "-sE"] + sys.argv)
 
             pex_file = os.environ.get("PEX", None)
             if pex_file:
@@ -478,8 +502,8 @@ def _populate_sources(
 
             pex_script = pex_overrides.get("PEX_SCRIPT") if pex_overrides else {script!r}
             if pex_script:
-                script_path = os.path.join(venv_bin_dir, pex_script)
-                os.execv(script_path, [script_path] + sys.argv[1:])
+                script_path = os.path.join(venv_bin_dir, script_name(pex_script))
+                safe_execv([script_path] + sys.argv[1:])
 
             pex_interpreter = pex_overrides.get("PEX_INTERPRETER", "").lower() in ("1", "true")
             PEX_INTERPRETER_ENTRYPOINT = "code:interact"
@@ -518,7 +542,7 @@ def _populate_sources(
                         "Re-executing with Python interpreter options: "
                         "cmdline={{cmdline!r}}\\n".format(cmdline=" ".join(cmdline))
                     )
-                    os.execv(python, cmdline)
+                    safe_execv(cmdline)
 
                 arg = args[0]
                 if arg == "-m":

@@ -8,7 +8,7 @@ import colors
 import pytest
 
 from pex.inherit_path import InheritPath
-from pex.testing import PY_VER, make_env, run_pex_command
+from pex.testing import PY_VER, make_env, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
 
@@ -40,7 +40,7 @@ def test_inherit_path_pex_info(
         # type: (...) -> None
 
         expect_success = inherit_path is not InheritPath.FALSE
-        process = subprocess.Popen(
+        process = pex_popen(
             args=[venv_python, pex, "-c", "import colors; print(colors.yellow('Babel Fish'))"],
             env=make_env(**env),
             stdout=subprocess.PIPE,

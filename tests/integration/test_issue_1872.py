@@ -2,7 +2,6 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 
 from pex.compatibility import PY3
@@ -11,7 +10,7 @@ from pex.pep_503 import ProjectName
 from pex.resolve.locked_resolve import LocalProjectArtifact
 from pex.resolve.lockfile import json_codec
 from pex.resolve.resolved_requirement import Pin
-from pex.testing import PY37, ensure_python_interpreter, make_env
+from pex.testing import PY37, ensure_python_interpreter, make_env, pex_check_call
 from pex.typing import TYPE_CHECKING
 from pex.version import __version__
 
@@ -30,10 +29,10 @@ def test_pep_518_venv_pex_env_scrubbing(
 
     package_script = os.path.join(pex_project_dir, "scripts", "package.py")
     pex_pex = os.path.join(str(tmpdir), "pex")
-    subprocess.check_call(args=[python, package_script, "--local", "--pex-output-file", pex_pex])
+    pex_check_call(args=[python, package_script, "--local", "--pex-output-file", pex_pex])
 
     lock = os.path.join(str(tmpdir), "lock.json")
-    subprocess.check_call(
+    pex_check_call(
         args=[
             # Although the package script requires Python 3 to create the Pex PEX, we should be
             # able to execute the Pex PEX with any interpreter.

@@ -2,12 +2,12 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
-import subprocess
 import sys
 from contextlib import contextmanager
 
 from pex import third_party
 from pex.common import temporary_dir
+from pex.testing import pex_check_output
 from pex.typing import TYPE_CHECKING
 from pex.variables import ENV
 
@@ -59,7 +59,7 @@ def test_isolated_idempotent_subprocess():
     # type: () -> None
     with temporary_pex_root() as (_, env):
         devendored_chroot = os.path.realpath(third_party.isolated().chroot_path)
-        stdout = subprocess.check_output(
+        stdout = pex_check_output(
             args=[
                 sys.executable,
                 "-c",

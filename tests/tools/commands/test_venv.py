@@ -20,14 +20,37 @@ from pex.compatibility import PY2
 from pex.executor import Executor
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
+from pex.os import WINDOWS
 from pex.pex_builder import CopyMode, PEXBuilder
-from pex.testing import IS_PYPY, PY310, PY_VER, ensure_python_interpreter, run_pex_command
+from pex.testing import (
+    IS_PYPY,
+    PY310,
+    PY_VER,
+    ensure_python_interpreter,
+    pex_check_call,
+    pex_check_output,
+    pex_popen,
+    run_pex_command,
+)
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
+from pex.venv.testing import get_venv_prompt
 from pex.venv.virtualenv import Virtualenv
 
 if TYPE_CHECKING:
-    from typing import Any, Dict, Iterable, Iterator, List, Optional, Protocol, Set, Text, Tuple
+    from typing import (
+        Any,
+        Callable,
+        Dict,
+        Iterable,
+        Iterator,
+        List,
+        Optional,
+        Protocol,
+        Set,
+        Text,
+        Tuple,
+    )
 
     class CreatePexVenv(Protocol):
         def __call__(self, *options):
@@ -84,12 +107,12 @@ def make_env(**kwargs):
 @pytest.fixture
 def create_pex_venv(pex):
     # type: (str) -> Iterator[CreatePexVenv]
-    with temporary_dir() as tmpdir:
+    with temporary_dir(cleanup=False) as tmpdir:
         venv_dir = os.path.join(tmpdir, "venv")
 
         def _create_pex_venv(*options):
             # type: (*str) -> Virtualenv
-            subprocess.check_call(
+            pex_check_call(
                 args=[pex, "venv", venv_dir] + list(options or ()), env=make_env(PEX_TOOLS="1")
             )
             return Virtualenv(venv_dir)
@@ -122,7 +145,7 @@ def execute_venv_pex_interpreter(
     **extra_env  # type: Any
 ):
     # type: (...) -> Tuple[int, Text, Text]
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[venv.join_path("pex")] + list(extra_args),
         env=make_env(PEX_INTERPRETER=True, **extra_env),
         stdout=subprocess.PIPE,
@@ -157,7 +180,7 @@ def test_venv_pex(create_pex_venv):
     venv = create_pex_venv()
     venv_pex = venv.join_path("pex")
 
-    fabric_output = subprocess.check_output(args=[venv_pex, "-V"])
+    fabric_output = pex_check_output(args=[venv_pex, "-V"])
 
     # N.B.: `fab -V` output looks like so:
     # $ fab -V
@@ -168,12 +191,12 @@ def test_venv_pex(create_pex_venv):
     assert FABRIC_VERSION == versions["Fabric"]
 
     invoke_version = "Invoke {}".format(versions["Invoke"])
-    invoke_script_output = subprocess.check_output(
+    invoke_script_output = pex_check_output(
         args=[venv_pex, "-V"], env=make_env(PEX_SCRIPT="invoke")
     )
     assert invoke_version == invoke_script_output.decode("utf-8").strip()
 
-    invoke_entry_point_output = subprocess.check_output(
+    invoke_entry_point_output = pex_check_output(
         args=[venv_pex, "-V"],
         env=make_env(PEX_MODULE="invoke.main:program.run"),
     )
@@ -212,7 +235,7 @@ def test_venv_pex(create_pex_venv):
                 user_package=expected_file_path(venv, "user.package"),
             )
         ),
-        PEX_EXTRA_SYS_PATH=os.pathsep.join(pex_extra_sys_path),
+        PEX_EXTRA_SYS_PATH=":".join(pex_extra_sys_path),
     )
     assert 0 == returncode, stderr
 
@@ -231,7 +254,7 @@ def test_binary_path(create_pex_venv):
 
         def try_invoke(*args):
             try:
-                subprocess.check_call(list(args))
+                pex_check_call(list(args))
                 return 0
             except OSError as e:
                 if e.errno == errno.ENOENT:
@@ -348,13 +371,13 @@ def test_venv_multiprocessing_issues_1236(
     result.assert_success()
 
     # Confirm multiprocessing works via normal PEX file execution.
-    output = subprocess.check_output(args=[pex_file])
+    output = pex_check_output(args=[pex_file])
     assert "hello" == output.decode("utf-8").strip()
 
     # Confirm multiprocessing works via the `pex` venv script.
     venv = os.path.join(str(tmpdir), "venv")
-    subprocess.check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=True))
-    output = subprocess.check_output(args=[os.path.join(venv, "pex")])
+    pex_check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=True))
+    output = pex_check_output(args=[os.path.join(venv, "pex")])
     assert "hello" == output.decode("utf-8").strip()
 
 
@@ -369,15 +392,13 @@ def test_venv_symlinked_source_issues_1239(tmpdir):
     pex_builder.set_executable(main)
     pex_file = os.path.join(str(tmpdir), "a.pex")
     pex_builder.build(pex_file, bytecode_compile=False)
-    assert 42 == subprocess.Popen(args=[pex_file]).wait()
+    assert 42 == pex_popen(args=[pex_file]).wait()
 
     venv = os.path.join(str(tmpdir), "a.venv")
-    subprocess.check_call(
-        args=[sys.executable, "-m", "pex.tools", pex_builder.path(), "venv", venv]
-    )
+    pex_check_call(args=[sys.executable, "-m", "pex.tools", pex_builder.path(), "venv", venv])
     venv_pex = os.path.join(venv, "pex")
     shutil.rmtree(src)
-    assert 42 == subprocess.Popen(args=[venv_pex]).wait()
+    assert 42 == pex_popen(args=[venv_pex]).wait()
 
 
 def test_venv_entrypoint_function_exit_code_issue_1241(tmpdir):
@@ -409,10 +430,10 @@ def test_venv_entrypoint_function_exit_code_issue_1241(tmpdir):
     result.assert_success()
 
     venv = os.path.join(str(tmpdir), "ep-function.venv")
-    subprocess.check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
+    pex_check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
 
     venv_pex = os.path.join(venv, "pex")
-    assert 0 == subprocess.Popen(args=[venv_pex]).wait()
+    assert 0 == pex_popen(args=[venv_pex]).wait()
 
     def assert_venv_process(
         args,  # type: List[str]
@@ -421,9 +442,7 @@ def test_venv_entrypoint_function_exit_code_issue_1241(tmpdir):
         expected_stderr="",  # type: str
     ):
         # type: (...) -> None
-        process = subprocess.Popen(
-            args=[venv_pex] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        process = pex_popen(args=[venv_pex] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         assert expected_returncode == process.returncode
         assert expected_stdout == stdout.decode("utf-8")
@@ -445,16 +464,14 @@ def test_venv_copies(tmpdir):
     PEX_TOOLS = make_env(PEX_TOOLS=1)
 
     venv_symlinks = os.path.join(str(tmpdir), "venv.symlinks")
-    subprocess.check_call(args=[python310, pex_file, "venv", venv_symlinks], env=PEX_TOOLS)
+    pex_check_call(args=[python310, pex_file, "venv", venv_symlinks], env=PEX_TOOLS)
     venv_symlinks_interpreter = PythonInterpreter.from_binary(
         os.path.join(venv_symlinks, "bin", "python")
     )
     assert os.path.islink(venv_symlinks_interpreter.binary)
 
     venv_copies = os.path.join(str(tmpdir), "venv.copies")
-    subprocess.check_call(
-        args=[python310, pex_file, "venv", "--copies", venv_copies], env=PEX_TOOLS
-    )
+    pex_check_call(args=[python310, pex_file, "venv", "--copies", venv_copies], env=PEX_TOOLS)
     venv_copies_interpreter = PythonInterpreter.from_binary(
         os.path.join(venv_copies, "bin", "python")
     )
@@ -484,8 +501,8 @@ def test_relocatable_venv(tmpdir):
     result.assert_success()
 
     venv = os.path.join(str(tmpdir), "relocatable.venv")
-    subprocess.check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
-    subprocess.check_call(args=[os.path.join(venv, "pex")])
+    pex_check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
+    pex_check_call(args=[os.path.join(venv, "pex")])
 
     relocated_relpath = "relocated.venv"
     relocated_venv = os.path.join(str(tmpdir), relocated_relpath)
@@ -494,11 +511,11 @@ def test_relocatable_venv(tmpdir):
     # interpreter, a move of the venv makes the script un-runnable directly.
     shutil.move(venv, relocated_venv)
     with pytest.raises(OSError) as exec_info:
-        subprocess.check_call(args=[os.path.join(relocated_venv, "pex")])
+        pex_check_call(args=[os.path.join(relocated_venv, "pex")])
     assert errno.ENOENT == exec_info.value.errno
 
     # But we should be able to run the script using the moved venv's interpreter.
-    subprocess.check_call(
+    pex_check_call(
         args=[
             os.path.join(relocated_relpath, "bin", "python"),
             os.path.join(relocated_relpath, "pex"),
@@ -541,7 +558,7 @@ def test_compile(tmpdir):
     result.assert_success()
 
     venv = os.path.join(str(tmpdir), "venv")
-    subprocess.check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
+    pex_check_call(args=[pex_file, "venv", venv], env=make_env(PEX_TOOLS=1))
     # N.B.: The right way to discover the site-packages dir is via site.getsitepackages().
     # Unfortunately we use an old version of virtualenv to create PyPy <= 3.7 and CPython 2.7 venvs
     # and it does not add a getsitepackages function to site.py; so we cheat.
@@ -565,9 +582,7 @@ def test_compile(tmpdir):
     assert "__main__.py" in venv_py_files
 
     compile_venv = os.path.join(str(tmpdir), "compile.venv")
-    subprocess.check_call(
-        args=[pex_file, "venv", "--compile", compile_venv], env=make_env(PEX_TOOLS=1)
-    )
+    pex_check_call(args=[pex_file, "venv", "--compile", compile_venv], env=make_env(PEX_TOOLS=1))
     # Ensure all original py files have a compiled counterpart.
     for py_file in venv_py_files:
         if PY2:
@@ -586,7 +601,7 @@ def test_compile(tmpdir):
             )
 
     compile_venv_pyc_files = collect_files(compile_venv, ".pyc")
-    subprocess.check_call(args=[os.path.join(compile_venv, "pex")])
+    pex_check_call(args=[os.path.join(compile_venv, "pex")])
     assert compile_venv_pyc_files == collect_files(
         compile_venv, ".pyc"
     ), "Expected no new compiled python files."
@@ -608,7 +623,7 @@ def test_strip_pex_env(tmpdir):
         ).assert_success()
 
         venv = os.path.join(str(tmpdir), "strip_{}.venv".format(strip_pex_env))
-        subprocess.check_call(args=[pex, "venv", venv], env=make_env(PEX_TOOLS=1))
+        pex_check_call(args=[pex, "venv", venv], env=make_env(PEX_TOOLS=1))
         return venv
 
     check_pex_env_vars_code = dedent(
@@ -638,12 +653,12 @@ def test_strip_pex_env(tmpdir):
     assert 2 == len([name for name in two_pex_env_vars if name.startswith("PEX_")])
 
     strip_venv = create_pex_venv(strip_pex_env=True)
-    subprocess.check_call(
+    pex_check_call(
         args=[os.path.join(strip_venv, "pex"), "-c", check_pex_env_vars_code], env=two_pex_env_vars
     )
 
     no_strip_venv = create_pex_venv(strip_pex_env=False)
-    process = subprocess.Popen(
+    process = pex_popen(
         args=[os.path.join(no_strip_venv, "pex"), "-c", check_pex_env_vars_code],
         env=two_pex_env_vars,
     )
@@ -662,7 +677,7 @@ def test_warn_unused_pex_env_vars():
     def assert_execute_venv_pex(expected_stderr, **env_vars):
         env = os.environ.copy()
         env.update(env_vars)
-        process = subprocess.Popen(
+        process = pex_popen(
             [venv_pex, "-c", ""], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
         )
         stdout, stderr = process.communicate()
@@ -717,30 +732,23 @@ def test_custom_prompt(tmpdir):
     ).assert_success()
 
     venv_dir = os.path.join(str(tmpdir), "venv_dir")
-    subprocess.check_call(
+    pex_check_call(
         args=[venv_pex, "venv", "--prompt", "jane", venv_dir], env=make_env(PEX_TOOLS=True)
     )
 
-    if PY_VER == (2, 7) or (IS_PYPY and PY_VER <= (3, 7)):
+    if WINDOWS:
+        expected_prompt = "(jane) $P$G"
+    elif PY_VER == (2, 7) or (IS_PYPY and PY_VER <= (3, 7)):
         # Neither CPython 2.7 not PyPy interpreters have (functioning) venv modules; so we create
         # their venvs with an old copy of virtualenv that does not surround the prompt with parens.
         expected_prompt = "jane"
     elif PY_VER == (3, 5):
-        # We can't set the prompt for CPython 3.5 so we expect the name of the venv dir.
+        # We can't set the prompt for CPython 3.5; so we expect the name of the venv dir.
         expected_prompt = "(venv_dir)"
     else:
         expected_prompt = "(jane)"
 
-    output = subprocess.check_output(
-        args=[
-            "/usr/bin/env",
-            "bash",
-            "-c",
-            "source {} && echo $PS1".format(os.path.join(venv_dir, "bin", "activate")),
-        ],
-        env=make_env(TERM="dumb", COLS=80),
-    )
-    assert expected_prompt == output.decode("utf-8").strip()
+    assert expected_prompt == get_venv_prompt(venv_dir, tmpdir=str(tmpdir)).strip()
 
 
 @pytest.mark.parametrize(
@@ -773,7 +781,7 @@ def test_remove(
     assert not os.path.exists(venv_dir)
 
     venv_pex = create_venv_pex()
-    subprocess.check_call(args=[venv_pex, "venv", venv_dir], env=make_env(PEX_TOOLS=True))
+    pex_check_call(args=[venv_pex, "venv", venv_dir], env=make_env(PEX_TOOLS=True))
     assert os.path.exists(venv_dir)
     assert os.path.exists(venv_pex)
     assert os.path.exists(pex_root)
@@ -781,9 +789,7 @@ def test_remove(
     shutil.rmtree(venv_dir)
     assert not os.path.exists(venv_dir)
 
-    subprocess.check_call(
-        args=[venv_pex, "venv", "--rm", "pex", venv_dir], env=make_env(PEX_TOOLS=True)
-    )
+    pex_check_call(args=[venv_pex, "venv", "--rm", "pex", venv_dir], env=make_env(PEX_TOOLS=True))
     assert os.path.exists(venv_dir)
     assert not os.path.exists(venv_pex)
     assert os.path.exists(pex_root)
@@ -792,9 +798,7 @@ def test_remove(
     assert not os.path.exists(venv_dir)
     venv_pex = create_venv_pex()
 
-    subprocess.check_call(
-        args=[venv_pex, "venv", "--rm", "all", venv_dir], env=make_env(PEX_TOOLS=True)
-    )
+    pex_check_call(args=[venv_pex, "venv", "--rm", "all", venv_dir], env=make_env(PEX_TOOLS=True))
     assert os.path.exists(venv_dir)
     assert not os.path.exists(venv_pex)
     assert not os.path.exists(pex_root)

@@ -1,12 +1,11 @@
 # Copyright 2022 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 import os.path
-import subprocess
 from textwrap import dedent
 
 import pytest
 
-from pex.testing import PY_VER, run_pex_command
+from pex.testing import PY_VER, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -75,5 +74,5 @@ def test_missing_data_dir_entries(
         + execution_mode_args
     ).assert_success()
 
-    output = subprocess.check_output(args=[pylint_pex, "--version"])
+    output = pex_check_output(args=[pylint_pex, "--version"])
     assert " 1.9.5," in output.decode("utf-8")

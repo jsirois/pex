@@ -8,6 +8,8 @@ import re
 import subprocess
 
 from pex.common import is_exe
+from pex.os import WINDOWS
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 
@@ -204,9 +206,14 @@ class Pyenv(object):
         # N.B.: Pyenv creates a 'python' symlink for both the CPython and PyPy versions it installs;
         # so counting on 'python' is OK here. We do resolve the symlink though to return a canonical
         # direct path to the python binary.
-        binary_name = binary_name or "python"
+        binary_name = script_name(binary_name or "python")
 
-        python = os.path.realpath(
-            os.path.join(self.root, "versions", pyenv_version, "bin", binary_name)
-        )
+        if WINDOWS:
+            python = os.path.realpath(
+                os.path.join(self.root, "versions", pyenv_version, binary_name)
+            )
+        else:
+            python = os.path.realpath(
+                os.path.join(self.root, "versions", pyenv_version, SCRIPT_DIR, binary_name)
+            )
         return python if is_exe(python) else None

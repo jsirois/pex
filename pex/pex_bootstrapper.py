@@ -8,13 +8,16 @@ import os
 import sys
 
 from pex import pex_warnings
-from pex.common import atomic_directory, die, pluralize
+from pex.atomic_directory import atomic_directory
+from pex.common import die, pluralize
 from pex.environment import ResolveError
 from pex.inherit_path import InheritPath
 from pex.interpreter import PythonInterpreter
 from pex.interpreter_constraints import UnsatisfiableInterpreterConstraintsError
 from pex.orderedset import OrderedSet
+from pex.os import safe_execv
 from pex.pex_info import PexInfo
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.targets import LocalInterpreter
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
@@ -433,7 +436,7 @@ def maybe_reexec_pex(interpreter_test):
     # Avoid a re-run through compatibility_constraint checking.
     os.environ[current_interpreter_blessed_env_var] = "1"
 
-    os.execv(target_binary, cmdline)
+    safe_execv(cmdline)
 
 
 def _bootstrap(entry_point):
@@ -452,7 +455,7 @@ class VenvPex(object):
 
     def bin_file(self, name):
         # type: (str) -> str
-        return os.path.join(self.venv_dir, "bin", name)
+        return os.path.join(self.venv_dir, SCRIPT_DIR, script_name(name))
 
     def __attrs_post_init__(self):
         # type: () -> None
@@ -465,7 +468,7 @@ class VenvPex(object):
 
     def execv(self, *additional_args):
         # type: (*str) -> NoReturn
-        os.execv(self.python, self.execute_args(*additional_args))
+        safe_execv(self.execute_args(*additional_args))
 
 
 def ensure_venv(
@@ -534,7 +537,10 @@ def ensure_venv(
                         pex,
                         bin_path=pex_info.venv_bin_path,
                         python=os.path.join(
-                            short_venv_dir, "venv", "bin", os.path.basename(pex.interpreter.binary)
+                            short_venv_dir,
+                            "venv",
+                            SCRIPT_DIR,
+                            os.path.basename(pex.interpreter.binary),
                         ),
                         collisions_ok=collisions_ok,
                         symlink=not pex_info.venv_site_packages_copies,
@@ -629,7 +635,7 @@ def _activate_venv_dir(
     venv_python = None
 
     if venv_dir:
-        python = os.path.join(venv_dir, "bin", "python")
+        python = os.path.join(venv_dir, SCRIPT_DIR, script_name("python"))
         if os.path.exists(python):
             venv_python = python
 

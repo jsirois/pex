@@ -3,7 +3,6 @@
 
 import json
 import os.path
-import subprocess
 from textwrap import dedent
 
 import pytest
@@ -11,7 +10,7 @@ import pytest
 from pex.common import safe_open
 from pex.inherit_path import InheritPath
 from pex.orderedset import OrderedSet
-from pex.testing import make_env, run_pex_command
+from pex.testing import make_env, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -56,9 +55,7 @@ def execute_sys_path_dump_pex(
         for entry in cast(
             "List[str]",
             json.loads(
-                subprocess.check_output(
-                    args=[pex] + list(additional_args), env=make_env(**additional_env)
-                )
+                pex_check_output(args=[pex] + list(additional_args), env=make_env(**additional_env))
             ),
         )
     )
@@ -97,7 +94,7 @@ def assert_inherited(
 
 
         open({subprocess_proof!r}, "w").close()
-        sys.exit(subprocess.call([sys.executable, {other_exe!r}]))
+        sys.exit(pex_call([sys.executable, {other_exe!r}]))
         """
     ).format(subprocess_proof=subprocess_proof, other_exe=other_exe)
     actual = read_additional_sys_path(pex, "-c", code, PEX_INTERPRETER=1, **additional_env)

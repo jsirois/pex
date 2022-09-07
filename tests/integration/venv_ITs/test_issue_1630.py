@@ -3,13 +3,12 @@
 
 import json
 import os
-import subprocess
 
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
 from pex.pep_376 import InstalledWheel
 from pex.pex_info import PexInfo
-from pex.testing import PY37, ensure_python_venv, run_pex_command
+from pex.testing import PY37, ensure_python_venv, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
 
@@ -58,8 +57,8 @@ def test_data_files(tmpdir):
 
     # Check the rest by showing the venv created by Pex has all the same files as that created by
     # Pip.
-    subprocess.check_call(args=[pip, "install", "--no-deps", "--no-compile", "nbconvert==6.4.2"])
-    subprocess.check_call(args=[pip, "uninstall", "-y", "setuptools", "wheel", "pip"])
+    pex_check_call(args=[pip, "install", "--no-deps", "--no-compile", "nbconvert==6.4.2"])
+    pex_check_call(args=[py37, "-m", pip, "uninstall", "-y", "setuptools", "wheel", "pip"])
     pip_venv = Virtualenv.enclosing(py37)
     assert pip_venv is not None
 
