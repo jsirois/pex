@@ -439,8 +439,11 @@ def test_pex_env_var_issues_1485(
     def assert_pex_env_var_nested(**env):
         # type: (**Any) -> None
         assert_pex_env_var(
-            script="import subprocess; pex_check_call([{other_pex!r}], env={env!r})".format(
-                other_pex=other_pex_path, env=make_env(**env)
+            script=(
+                "import subprocess, sys; "
+                "subprocess.check_call([sys.executable, {other_pex!r}], env={env!r})".format(
+                    other_pex=other_pex_path, env=make_env(**env)
+                )
             ),
             expected_pex_env_var=other_pex_path,
             expect_empty_pex_root=False,
