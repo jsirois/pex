@@ -67,17 +67,24 @@ def try_run_program(
 
 
 def try_open_file(
-    path,  # type: str
-    error=None,  # type: Optional[str]
+        path,  # type: str
+        error=None,  # type: Optional[str]
 ):
     # type: (...) -> Result
-    opener, url = (
-        ("xdg-open", "https://www.freedesktop.org/wiki/Software/xdg-utils/")
-        if sys.platform.startswith("linux")
-        else ("open", None)
-    )
+    args = []
+    url = None
+    if "win32" == sys.platform:
+        opener = "cmd"
+        args.append("/C")
+    elif "darwin" == sys.platform:
+        opener = "open"
+    else:
+        opener = "xdg-open"
+        url = "https://www.freedesktop.org/wiki/Software/xdg-utils/"
+    args.append(path)
+
     with open(os.devnull, "wb") as devnull:
-        return try_run_program(opener, [path], url=url, error=error, stdout=devnull)
+        return try_run_program(opener, args, url=url, error=error, stdout=devnull)
 
 
 @attr.s(frozen=True)
