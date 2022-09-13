@@ -14,7 +14,7 @@ import shutil
 from contextlib import closing
 from fileinput import FileInput
 
-from pex import dist_metadata, hashing
+from pex import dist_metadata, fs, hashing
 from pex.common import filter_pyc_dirs, filter_pyc_files, is_python_script, safe_mkdir, safe_open
 from pex.compatibility import get_stdout_bytes_buffer, urlparse
 from pex.dist_metadata import Distribution, EntryPoint
@@ -307,7 +307,7 @@ class InstalledWheel(object):
                     # go missing leaving the dst dangling.
                     if link and not os.path.islink(src):
                         try:
-                            os.link(src, dst)
+                            fs.safe_link(src, dst)
                             continue
                         except OSError as e:
                             if e.errno != errno.EXDEV:
@@ -348,7 +348,7 @@ class InstalledWheel(object):
                         dst_parent = os.path.dirname(dst_entry)
                         safe_mkdir(dst_parent)
                         rel_src = os.path.relpath(src_entry, dst_parent)
-                        os.symlink(rel_src, dst_entry)
+                        fs.safe_symlink(rel_src, dst_entry)
                         traverse.discard(path)
                     elif is_dir:
                         safe_mkdir(dst_entry)
@@ -358,7 +358,7 @@ class InstalledWheel(object):
                         # target could later go missing leaving the dst_entry dangling.
                         if link and not os.path.islink(src_entry):
                             try:
-                                os.link(src_entry, dst_entry)
+                                fs.safe_link(src_entry, dst_entry)
                                 continue
                             except OSError as e:
                                 if e.errno != errno.EXDEV:

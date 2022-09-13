@@ -67,8 +67,8 @@ def try_run_program(
 
 
 def try_open_file(
-        path,  # type: str
-        error=None,  # type: Optional[str]
+    path,  # type: str
+    error=None,  # type: Optional[str]
 ):
     # type: (...) -> Result
     args = []

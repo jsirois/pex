@@ -8,13 +8,12 @@ import functools
 import hashlib
 import itertools
 import os
-import sys
 import zipfile
 from abc import abstractmethod
 from collections import OrderedDict, defaultdict
 
 from pex import targets
-from pex.atomic_directory import AtomicDirectory, atomic_directory
+from pex.atomic_directory import AtomicDirectory
 from pex.auth import PasswordEntry
 from pex.common import safe_mkdir, safe_mkdtemp
 from pex.dist_metadata import Distribution, Requirement
@@ -449,19 +448,23 @@ class InstallResult(object):
         # pex:   * - paths that do not exist or will be imported via zipimport
         # pex.pex 2.0.2
         #
-        wheel_dir_hash = fingerprint_path(self.install_chroot)
-        runtime_key_dir = os.path.join(self._installation_root, wheel_dir_hash)
-        with atomic_directory(runtime_key_dir, exclusive=False) as atomic_dir:
-            if not atomic_dir.is_finalized():
-                # Note: Create a relative path symlink between the two directories so that the
-                # PEX_ROOT can be used within a chroot environment where the prefix of the path may
-                # change between programs running inside and outside of the chroot.
-                source_path = os.path.join(atomic_dir.work_dir, self.request.wheel_file)
-                start_dir = os.path.dirname(source_path)
-                relative_target_path = os.path.relpath(self.install_chroot, start_dir)
-                os.symlink(relative_target_path, source_path)
+        # wheel_dir_hash = fingerprint_path(self.install_chroot)
+        # runtime_key_dir = os.path.join(self._installation_root, wheel_dir_hash)
+        # with atomic_directory(runtime_key_dir, exclusive=False) as atomic_dir:
+        #     if not atomic_dir.is_finalized():
+        #         # Note: Create a relative path symlink between the two directories so that the
+        #         # PEX_ROOT can be used within a chroot environment where the prefix of the path may
+        #         # change between programs running inside and outside of the chroot.
+        #         source_path = os.path.join(atomic_dir.work_dir, self.request.wheel_file)
+        #         start_dir = os.path.dirname(source_path)
+        #         relative_target_path = os.path.relpath(self.install_chroot, start_dir)
+        #         fs.safe_symlink(relative_target_path, source_path)
 
-        return self._iter_installed_distributions(install_requests, fingerprint=wheel_dir_hash)
+        # TODO(John Sirois): XXX: Can the symlink just be removed and the only hash be the wheel
+        #  hash.
+        return self._iter_installed_distributions(
+            install_requests, fingerprint=self.request.fingerprint
+        )
 
     def _iter_installed_distributions(
         self,

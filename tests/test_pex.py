@@ -13,12 +13,11 @@ from types import ModuleType
 
 import pytest
 
-from pex import resolver
+from pex import fs, resolver
 from pex.common import safe_mkdir, safe_open, temporary_dir
 from pex.compatibility import PY2, to_bytes
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
-from pex.os import WINDOWS
 from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
@@ -219,7 +218,7 @@ def test_site_libs_symlink():
         site_packages = os.path.join(tempdir, "site-packages")
         os.mkdir(site_packages)
         site_packages_link = os.path.join(tempdir, "site-packages-link")
-        os.symlink(site_packages, site_packages_link)
+        fs.safe_symlink(site_packages, site_packages_link)
         mock_site_packages.return_value = set([site_packages_link])
 
         site_libs = PEX.site_libs()

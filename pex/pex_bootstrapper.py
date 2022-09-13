@@ -7,7 +7,7 @@ import hashlib
 import os
 import sys
 
-from pex import pex_warnings
+from pex import fs, pex_warnings
 from pex.atomic_directory import atomic_directory
 from pex.common import die, pluralize
 from pex.environment import ResolveError
@@ -531,7 +531,7 @@ def ensure_venv(
                             )
                         continue
 
-                    os.symlink(venv_dir, os.path.join(short_venv.work_dir, "venv"))
+                    fs.safe_symlink(venv_dir, os.path.join(short_venv.work_dir, "venv"))
                     shebang = populate_venv(
                         virtualenv,
                         pex,

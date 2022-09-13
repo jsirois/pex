@@ -32,6 +32,7 @@ from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.orderedset import OrderedSet
+from pex.os import WINDOWS
 from pex.pex import PEX
 from pex.pex_info import PexInfo
 from pex.tracer import TRACER
@@ -57,6 +58,7 @@ import sys
 
 
 __INSTALLED_FROM__ = '__PEX_EXE__'
+__INSTALLED_BOOTSTRAP__ = '__PEX_BOOTSTRAP__'
 
 
 def __re_exec__(argv0, *extra_launch_args):
@@ -68,17 +70,20 @@ def __re_exec__(argv0, *extra_launch_args):
 
 __execute__ = __name__ == "__main__"
 
-def __maybe_install_pex__(pex, pex_root, pex_hash):
+def __maybe_install_pex__(pex, pex_root, pex_hash, bootstrap_hash):
   from pex.layout import maybe_install
   from pex.tracer import TRACER
 
-  installed_location = maybe_install(pex, pex_root, pex_hash)
-  if not __execute__ or not installed_location:
-    return installed_location
+  installation = maybe_install(pex, pex_root, pex_hash, bootstrap_hash)
+  if not __execute__ or not installation:
+    return installation
+    
+  installed_location, bootstrap_location = installation
 
   # N.B.: This is read upon re-exec below to point sys.argv[0] back to the original pex before
   # unconditionally scrubbing the env var and handing off to user code.
   os.environ[__INSTALLED_FROM__] = pex
+  os.environ[__INSTALLED_BOOTSTRAP__] = bootstrap_location
 
   TRACER.log('Executing installed PEX for {{}} at {{}}'.format(pex, installed_location))
   __re_exec__(sys.executable, installed_location)
@@ -134,7 +139,11 @@ __installed_from__ = os.environ.pop(__INSTALLED_FROM__, None)
 sys.argv[0] = os.path.realpath(__installed_from__ or sys.argv[0])
 
 sys.path[0] = os.path.realpath(sys.path[0])
-sys.path.insert(0, os.path.realpath(os.path.join(__entry_point__, {bootstrap_dir!r})))
+
+__bootstrap__ = os.environ.pop(__INSTALLED_BOOTSTRAP__, None)
+if not __bootstrap__:
+  __bootstrap__ = os.path.realpath(os.path.join(__entry_point__, {bootstrap_dir!r}))
+sys.path.insert(0, __bootstrap__)
 
 __venv_dir__ = None
 if not __installed_from__:
@@ -147,10 +156,14 @@ if not __installed_from__:
         pex_root=__pex_root__,
         pex_path=ENV.PEX_PATH or {pex_path!r},
       )
-    __installed_location__ = __maybe_install_pex__(
-      __entry_point__, pex_root=__pex_root__, pex_hash={pex_hash!r}
+    __installation__ = __maybe_install_pex__(
+      __entry_point__,
+      pex_root=__pex_root__,
+      pex_hash={pex_hash!r},
+      bootstrap_hash={bootstrap_hash!r}
     )
-    if __installed_location__:
+    if __installation__:
+      __installed_location__, _ = __installation__
       __entry_point__ = __installed_location__
 else:
     os.environ['PEX'] = os.path.realpath(__installed_from__)
@@ -208,7 +221,14 @@ class PEXBuilder(object):
         self._chroot = chroot or Chroot(path or safe_mkdtemp())
         self._pex_info = pex_info or PexInfo.default()
         self._preamble = preamble or ""
-        self._copy_mode = copy_mode
+
+        # TODO(John Sirois): XXX: Explain 2.7 symlinking causes original to be nuked when the
+        #  symlink dest is a tmpdir.
+        self._copy_mode = (
+            CopyMode.LINK
+            if copy_mode is CopyMode.SYMLINK and WINDOWS and sys.version_info[:2] < (3, 7)
+            else copy_mode
+        )
 
         self._shebang = self._interpreter.identity.hashbang()
         self._header = None  # type: Optional[str]
@@ -514,9 +534,11 @@ class PEXBuilder(object):
             if path.endswith(".py")
             # N.B.: This file if Python 3.6+ only and will not compile under Python 2.7 or
             # Python 3.5. Since we don't actually use it we just skip compiling it.
-            and path
-            != os.path.join(
-                self._pex_info.bootstrap, "pex/vendor/_vendored/attrs/attr/_next_gen.py"
+            and os.path.normpath(path)
+            != os.path.normpath(
+                os.path.join(
+                    self._pex_info.bootstrap, "pex/vendor/_vendored/attrs/attr/_next_gen.py"
+                )
             )
         ]
 
@@ -532,6 +554,7 @@ class PEXBuilder(object):
 
         bootstrap = BOOTSTRAP_ENVIRONMENT.format(
             bootstrap_dir=self._pex_info.bootstrap,
+            bootstrap_hash=self._pex_info.bootstrap_hash,
             pex_root=self._pex_info.raw_pex_root,
             pex_hash=self._pex_info.pex_hash,
             has_interpreter_constraints=bool(self._pex_info.interpreter_constraints),

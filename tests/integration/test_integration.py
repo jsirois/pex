@@ -16,6 +16,7 @@ from textwrap import dedent
 
 import pytest
 
+from pex import fs
 from pex.common import safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
 from pex.compatibility import to_bytes
 from pex.dist_metadata import Distribution, Requirement
@@ -228,7 +229,7 @@ def test_pex_python_symlink():
     # type: () -> None
     with temporary_dir() as td:
         symlink_path = os.path.join(td, "python-symlink")
-        os.symlink(sys.executable, symlink_path)
+        fs.safe_symlink(sys.executable, symlink_path)
         pexrc_path = os.path.join(td, ".pexrc")
         with open(pexrc_path, "w") as pexrc:
             pexrc.write("PEX_PYTHON=%s" % symlink_path)

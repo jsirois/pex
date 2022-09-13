@@ -894,12 +894,21 @@ def seed_cache(
                 "There was no pex_hash stored in {} for {}.".format(PexInfo.PATH, pex_path)
             )
 
-        with TRACER.timed("Seeding caches for {}".format(pex_path)):
-            final_pex_path = os.path.join(
-                maybe_install(pex=pex_path, pex_root=pex_root, pex_hash=pex_hash)
-                or os.path.abspath(pex_path),
-                "__main__.py",
+        bootstrap_hash = pex_info.bootstrap_hash
+        if bootstrap_hash is None:
+            raise AssertionError(
+                "There was no bootstrap_hash stored in {} for {}.".format(PexInfo.PATH, pex_path)
             )
+
+        with TRACER.timed("Seeding caches for {}".format(pex_path)):
+            installation = maybe_install(
+                pex=pex_path, pex_root=pex_root, pex_hash=pex_hash, bootstrap_hash=bootstrap_hash
+            )
+            if installation:
+                installed_to, _ = installation
+            else:
+                installed_to = os.path.abspath(pex_path)
+            final_pex_path = os.path.join(installed_to, "__main__.py")
             if verbose:
                 return json.dumps(create_verbose_info(final_pex_path=final_pex_path))
             else:

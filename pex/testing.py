@@ -458,7 +458,7 @@ def bootstrap_python_installer(dest):
 # issues with the combination of 7 total unique interpreter versions and a Travis-CI timeout of 50
 # minutes for a shard.
 PY27 = "2.7.18"
-PY37 = "3.7.11"
+PY37 = "3.7.9" if WINDOWS else "3.7.11"
 PY310 = "3.10.6"
 
 ALL_PY_VERSIONS = (PY27, PY37, PY310)
@@ -470,9 +470,9 @@ def ensure_python_distribution(version):
     if version not in ALL_PY_VERSIONS:
         raise ValueError("Please constrain version to one of {}".format(ALL_PY_VERSIONS))
 
-    assert (
-        not WINDOWS or version == PY310
-    ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
+    # assert (
+    #     not WINDOWS or version == PY310
+    # ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
 
     basedir = os.path.expanduser(os.environ.get("_PEX_TEST_PYENV_ROOT", "~/.pex_dev"))
     clone_dir = os.path.abspath(os.path.join(basedir, "pyenv-win" if WINDOWS else "pyenv"))

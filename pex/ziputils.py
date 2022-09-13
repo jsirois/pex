@@ -7,11 +7,12 @@ import io
 import os
 import shutil
 import struct
-from typing import BinaryIO, Optional
 
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from typing import BinaryIO, Optional
+
     import attr  # vendor:skip
 else:
     from pex.third_party import attr

@@ -7,11 +7,10 @@ import errno
 import itertools
 import os
 import shutil
-import sys
 from collections import Counter, defaultdict
 from textwrap import dedent
 
-from pex import pex_warnings
+from pex import pex_warnings, fs
 from pex.common import chmod_plus_x, pluralize, safe_mkdir
 from pex.compatibility import is_valid_python_identifier
 from pex.dist_metadata import Distribution
@@ -40,7 +39,7 @@ def _relative_symlink(
     # type: (...) -> None
     dst_parent = os.path.dirname(dst)
     rel_src = os.path.relpath(src, dst_parent)
-    os.symlink(rel_src, dst)
+    fs.safe_symlink(rel_src, dst)
 
 
 # N.B.: We can't use shutil.copytree since we copy from multiple source locations to the same site
@@ -82,7 +81,7 @@ def _copytree(
                     # later go missing leaving the dst_entry dangling.
                     if link and not os.path.islink(src_entry):
                         try:
-                            os.link(src_entry, dst_entry)
+                            fs.safe_link(src_entry, dst_entry)
                             continue
                         except OSError as e:
                             if e.errno != errno.EXDEV:
@@ -608,4 +607,4 @@ def _populate_sources(
     with open(venv.join_path("__main__.py"), "w") as fp:
         fp.write(main_contents)
     chmod_plus_x(fp.name)
-    os.symlink(os.path.basename(fp.name), venv.join_path("pex"))
+    fs.safe_symlink(os.path.basename(fp.name), venv.join_path("pex"))

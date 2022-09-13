@@ -697,6 +697,14 @@ def unzip_dir(
     return os.path.join(_expand_pex_root(pex_root), "unzipped_pexes", pex_hash)
 
 
+def bootstrap_dir(
+    pex_root,  # type: str
+    bootstrap_hash,  # type: str
+):
+    # type: (...) -> str
+    return os.path.join(_expand_pex_root(pex_root), "bootstraps", bootstrap_hash)
+
+
 def venv_dir(
     pex_file,  # type: str
     pex_root,  # type: str

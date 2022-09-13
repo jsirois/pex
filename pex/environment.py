@@ -228,12 +228,21 @@ class PEXEnvironment(object):
             raise AssertionError(
                 "There was no pex_hash stored in {} for {}.".format(PexInfo.PATH, pex)
             )
+        bootstrap_hash = pex_info.bootstrap_hash
+        if bootstrap_hash is None:
+            raise AssertionError(
+                "There was no bootstrap_hash stored in {} for {}.".format(PexInfo.PATH, pex)
+            )
         target = target or targets.current()
         key = (pex_file, pex_hash, target)
         mounted = cls._CACHE.get(key)
         if mounted is None:
             pex_root = pex_info.pex_root
-            pex = maybe_install(pex=pex, pex_root=pex_root, pex_hash=pex_hash) or pex
+            installation = maybe_install(
+                pex=pex, pex_root=pex_root, pex_hash=pex_hash, bootstrap_hash=bootstrap_hash
+            )
+            if installation:
+                pex, _ = installation
             mounted = cls(pex=pex, pex_info=pex_info, target=target)
             cls._CACHE[key] = mounted
         return mounted
@@ -266,9 +275,14 @@ class PEXEnvironment(object):
     def iter_distributions(self):
         # type: () -> Iterator[FingerprintedDistribution]
         internal_cache = os.path.join(self._pex, self._pex_info.internal_cache)
+        install_cache = self._pex_info.install_cache
         with TRACER.timed("Searching dependency cache: %s" % internal_cache, V=2):
             for distribution_name, fingerprint in self._pex_info.distributions.items():
+                # TODO(John Sirois): XXX: Do better than try / fallback. It appears the try is
+                #  just needed for dogfood PEXes.
                 dist_path = os.path.join(internal_cache, distribution_name)
+                if not os.path.isdir(dist_path):
+                    dist_path = os.path.join(install_cache, fingerprint, distribution_name)
                 yield FingerprintedDistribution(
                     distribution=Distribution.load(dist_path),
                     fingerprint=fingerprint,

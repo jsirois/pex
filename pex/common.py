@@ -20,7 +20,7 @@ from collections import defaultdict, namedtuple
 from datetime import datetime
 from uuid import uuid4
 
-from pex.fs import safe_rename
+from pex import fs
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -101,38 +101,30 @@ def safe_copy(source, dest, overwrite=False):
         # type: () -> None
         temp_dest = dest + uuid4().hex
         shutil.copy(source, temp_dest)
-        safe_rename(temp_dest, dest)
+        fs.safe_rename(temp_dest, dest)
 
-    # If the platform supports hard-linking, use that and fall back to copying.
-    # Windows does not support hard-linking.
-    if hasattr(os, "link"):
-        try:
-            os.link(source, dest)
-        except OSError as e:
-            if e.errno == errno.EEXIST:
-                # File already exists.  If overwrite=True, write otherwise skip.
-                if overwrite:
-                    do_copy()
-            elif e.errno in (errno.EPERM, errno.EXDEV):
-                # For a hard link across devices issue, fall back on copying.
-                #
-                # For a permission issue, the cause could be one of:
-                # 1. We can't read source.
-                # 2. We can't write dest.
-                # 3. We don't own source but can read it.
-                # Although we can't do anything about cases 1 and 2, case 3 is due to
-                # `protected_hardlinks` (see: https://www.kernel.org/doc/Documentation/sysctl/fs.txt) and
-                # we can fall back to copying in that case.
-                #
-                # See also https://github.com/pantsbuild/pex/issues/850 where this was discovered.
+    try:
+        fs.safe_link(source, dest)
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            # File already exists.  If overwrite=True, write otherwise skip.
+            if overwrite:
                 do_copy()
-            else:
-                raise
-    elif os.path.exists(dest):
-        if overwrite:
+        elif e.errno in (errno.EPERM, errno.EXDEV):
+            # For a hard link across devices issue, fall back on copying.
+            #
+            # For a permission issue, the cause could be one of:
+            # 1. We can't read source.
+            # 2. We can't write dest.
+            # 3. We don't own source but can read it.
+            # Although we can't do anything about cases 1 and 2, case 3 is due to
+            # `protected_hardlinks` (see: https://www.kernel.org/doc/Documentation/sysctl/fs.txt) and
+            # we can fall back to copying in that case.
+            #
+            # See also https://github.com/pantsbuild/pex/issues/850 where this was discovered.
             do_copy()
-    else:
-        do_copy()
+        else:
+            raise
 
 
 # See http://stackoverflow.com/questions/2572172/referencing-other-modules-in-atexit
@@ -531,7 +523,7 @@ class Chroot(object):
         self._ensure_parent(dst)
         abs_src = os.path.abspath(src)
         abs_dst = os.path.join(self.chroot, dst)
-        os.symlink(abs_src, abs_dst)
+        fs.safe_symlink(abs_src, abs_dst)
 
     def write(self, data, dst, label=None, mode="wb", executable=False):
         """Write data to ``chroot/dst`` with optional label.

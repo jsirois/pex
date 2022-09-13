@@ -12,6 +12,7 @@ from typing import Any, Callable, List
 import colors
 import pytest
 
+from pex import fs
 from pex.cli.testing import run_pex3
 from pex.common import chmod_plus_x, touch
 from pex.testing import IS_PYPY, pex_call, pex_check_call, pex_check_output, run_pex_command
@@ -102,7 +103,7 @@ def shebang_length_limit(
         except OSError as e:
             if e.errno != errno.ENOENT:
                 raise e
-        os.symlink("/bin/sh", sh_path)
+        fs.safe_symlink("/bin/sh", sh_path)
 
         script = os.path.join(path, "script.sh")
         with open(script, "w") as fp:

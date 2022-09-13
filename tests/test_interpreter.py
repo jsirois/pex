@@ -12,7 +12,7 @@ from textwrap import dedent
 
 import pytest
 
-from pex import interpreter
+from pex import fs, interpreter
 from pex.common import chmod_plus_x, safe_mkdir, safe_mkdtemp, temporary_dir, touch
 from pex.compatibility import PY3
 from pex.executor import Executor
@@ -202,7 +202,7 @@ class TestPythonInterpreter(object):
     def test_iter_interpreter_path_filter_symlink(self, test_interpreter1, test_interpreter2):
         # type: (str, str) -> None
         with temporary_dir() as bin_dir:
-            os.symlink(test_interpreter2, os.path.join(bin_dir, "jake"))
+            fs.safe_symlink(test_interpreter2, os.path.join(bin_dir, "jake"))
 
             # Verify path filtering happens before interpreter resolution, which os.path.realpaths
             # the interpreter binary. This supports specifying a path filter like
@@ -449,7 +449,7 @@ def macos_monterey_interpeter(tmpdir_factory):
     chmod_plus_x(pythonwrapper)
 
     python = os.path.join(str(tmpdir_factory.mktemp("bin")), "python")
-    os.symlink(pythonwrapper, python)
+    fs.safe_symlink(pythonwrapper, python)
     return python
 
 

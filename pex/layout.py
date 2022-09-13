@@ -9,15 +9,16 @@ import zipfile
 from abc import abstractmethod
 from contextlib import contextmanager
 
+from pex import fs
 from pex.atomic_directory import atomic_directory
 from pex.common import is_script, open_zip, safe_copy, safe_mkdir
 from pex.enum import Enum
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
-from pex.variables import unzip_dir
+from pex.variables import bootstrap_dir, unzip_dir
 
 if TYPE_CHECKING:
-    from typing import Iterator, Optional
+    from typing import Iterator, Optional, Tuple
 
 BOOTSTRAP_DIR = ".bootstrap"
 DEPS_DIR = ".deps"
@@ -101,11 +102,13 @@ def _install(
     layout,  # type: _Layout
     pex_root,  # type: str
     pex_hash,  # type: str
+    bootstrap_hash,  # type: str
 ):
-    # type: (...) -> str
+    # type: (...) -> Tuple[str, str]
     with TRACER.timed("Laying out {}".format(layout)):
         pex = layout.path
         install_to = unzip_dir(pex_root=pex_root, pex_hash=pex_hash)
+        bootstrap_cache = bootstrap_dir(pex_root=pex_root, bootstrap_hash=bootstrap_hash)
         with atomic_directory(install_to, exclusive=True) as chroot:
             if not chroot.is_finalized():
                 with TRACER.timed("Installing {} to {}".format(pex, install_to)):
@@ -114,11 +117,6 @@ def _install(
                     pex_info = PexInfo.from_pex(pex)
                     pex_info.update(PexInfo.from_env())
 
-                    bootstrap_cache = pex_info.bootstrap_cache
-                    if bootstrap_cache is None:
-                        raise AssertionError(
-                            "Expected bootstrap_cache to be populated for {}.".format(layout)
-                        )
                     code_hash = pex_info.code_hash
                     if code_hash is None:
                         raise AssertionError(
@@ -130,7 +128,7 @@ def _install(
                     ) as bootstrap_zip_chroot:
                         if not bootstrap_zip_chroot.is_finalized():
                             layout.extract_bootstrap(bootstrap_zip_chroot.work_dir)
-                    os.symlink(
+                    fs.safe_symlink(
                         os.path.join(os.path.relpath(bootstrap_cache, install_to)),
                         os.path.join(chroot.work_dir, BOOTSTRAP_DIR),
                     )
@@ -150,7 +148,7 @@ def _install(
                                 layout.extract_dist(spread_chroot.work_dir, dist_relpath)
                         symlink_dest = os.path.join(chroot.work_dir, dist_relpath)
                         safe_mkdir(os.path.dirname(symlink_dest))
-                        os.symlink(
+                        fs.safe_symlink(
                             os.path.relpath(
                                 spread_dest,
                                 os.path.join(install_to, os.path.dirname(dist_relpath)),
@@ -163,7 +161,7 @@ def _install(
                         if not code_chroot.is_finalized():
                             layout.extract_code(code_chroot.work_dir)
                     for path in os.listdir(code_dest):
-                        os.symlink(
+                        fs.safe_symlink(
                             os.path.join(os.path.relpath(code_dest, install_to), path),
                             os.path.join(chroot.work_dir, path),
                         )
@@ -171,7 +169,7 @@ def _install(
                     layout.extract_pex_info(chroot.work_dir)
                     layout.extract_main(chroot.work_dir)
 
-        return install_to
+        return install_to, bootstrap_cache
 
 
 class _ZipAppPEX(_Layout):
@@ -290,8 +288,9 @@ def maybe_install(
     pex,  # type: str
     pex_root,  # type: str
     pex_hash,  # type: str
+    bootstrap_hash,  # type: str
 ):
-    # type: (...) -> Optional[str]
+    # type: (...) -> Optional[Tuple[str, str]]
     """Installs a zipapp or packed PEX into the pex root as a loose PEX.
 
     Returns the path of the installed PEX or `None` if the PEX needed no installation and can be
@@ -299,5 +298,5 @@ def maybe_install(
     """
     with _identify_layout(pex) as layout:
         if layout:
-            return _install(layout, pex_root, pex_hash)
+            return _install(layout, pex_root, pex_hash, bootstrap_hash)
     return None
