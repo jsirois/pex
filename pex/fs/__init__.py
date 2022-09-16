@@ -25,19 +25,20 @@ if WINDOWS and not hasattr(os, "replace"):
         # type: (...) -> None
 
         import ctypes
+        from ctypes.wintypes import LPCWSTR, DWORD, BOOL
 
         global _MF
         if _MF is None:
             mf = ctypes.windll.kernel32.MoveFileExW
             mf.argtypes = (
                 # lpExistingFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # lpNewFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # dwFlags
-                ctypes.c_uint32,
+                DWORD,
             )
-            mf.restype = ctypes.c_bool
+            mf.restype = BOOL
             _MF = mf
 
         # See: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw
@@ -64,19 +65,20 @@ if WINDOWS and (not hasattr(os, "symlink") or sys.version_info[:2] < (3, 8)):
         # type: (...) -> None
 
         import ctypes
+        from ctypes.wintypes import LPCWSTR, DWORD, BOOLEAN
 
         global _CSL
         if _CSL is None:
             csl = ctypes.windll.kernel32.CreateSymbolicLinkW
             csl.argtypes = (
                 # lpSymlinkFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # lpTargetFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # dwFlags
-                ctypes.c_uint32,
+                DWORD,
             )
-            csl.restype = ctypes.c_bool
+            csl.restype = BOOLEAN
             _CSL = csl
 
         # See: https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw
@@ -100,6 +102,7 @@ if WINDOWS and not hasattr(os, "link"):
         # type: (...) -> None
 
         import ctypes
+        from ctypes.wintypes import LPCWSTR, BOOL
 
         global _CHL
         if _CHL is None:
@@ -107,16 +110,16 @@ if WINDOWS and not hasattr(os, "link"):
             chl = ctypes.windll.kernel32.CreateHardLinkW
             chl.argtypes = (
                 # lpFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # lpExistingFileName
-                ctypes.c_wchar_p,
+                LPCWSTR,
                 # lpSecurityAttributes (Reserved; must be NULL)
                 ctypes.c_void_p,
             )
-            chl.restype = ctypes.c_bool
+            chl.restype = BOOL
             _CHL = chl
 
-        if not _CHL(os.path.join(r"\\?", dst), os.path.join(r"\\?", src), None):
+        if not _CHL(dst, src, None):
             raise ctypes.WinError()
 
 else:

@@ -190,9 +190,11 @@ class Virtualenv(object):
         py_major_minor = interpreter.version[:2]
         if py_major_minor[0] == 2 or (
             interpreter.identity.interpreter == "PyPy" and py_major_minor[:2] <= (3, 7)
+        ) or (
+            WINDOWS and py_major_minor < (3, 8)
         ):
-            # N.B.: PyPy3.6 and PyPy3.7 come equipped with a venv module but it does not seem to
-            # work.
+            # N.B.: PyPy3.6, PyPy3.7 and Windows Python 3.7 come equipped with a venv module but it
+            # does not seem to work.
             virtualenv_py = pkgutil.get_data(__name__, "virtualenv_16.7.12_py")
             with named_temporary_file(mode="wb") as fp:
                 fp.write(virtualenv_py)

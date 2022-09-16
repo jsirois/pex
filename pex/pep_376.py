@@ -34,6 +34,7 @@ if TYPE_CHECKING:
         List,
         Optional,
         Protocol,
+        Text,
         Tuple,
         Union,
     )
@@ -417,8 +418,8 @@ class Record(object):
     @staticmethod
     def _find_installation(
         prefix_dir,  # type: str
-        project_name,  # type: str
-        version,  # type: str
+        project_name,  # type: Text
+        version,  # type: Text
     ):
         # type: (...) -> Optional[Tuple[str, str, List[str]]]
 
@@ -452,8 +453,8 @@ class Record(object):
     def from_prefix_install(
         cls,
         prefix_dir,  # type: str
-        project_name,  # type: str
-        version,  # type: str
+        project_name,  # type: Text
+        version,  # type: Text
     ):
         result = cls._find_installation(prefix_dir, project_name, version)
         if not result:
@@ -478,8 +479,8 @@ class Record(object):
             ),
         )
 
-    project_name = attr.ib()  # type: str
-    version = attr.ib()  # type: str
+    project_name = attr.ib()  # type: Text
+    version = attr.ib()  # type: Text
     prefix_dir = attr.ib()  # type: str
     rel_base_dir = attr.ib()  # type: str
     relative_path = attr.ib()  # type: str

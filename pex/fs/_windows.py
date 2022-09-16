@@ -21,7 +21,7 @@ class WindowsFileLock(FileLock):
             try:
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
                 return cls(locked_fd=fd, unlock=lambda: msvcrt.locking(fd, msvcrt.LK_UNLCK, 1))
-            except OSError as e:
+            except (IOError, OSError) as e:
                 # Deadlock error is raised after failing to lock the file.
                 if e.errno != errno.EDEADLOCK:
                     raise

@@ -610,6 +610,8 @@ class Pip(object):
             "Should never fail to parse a wheel path into a project name and version, but "
             "failed to parse these from: {wheel}".format(wheel=wheel)
         )
+        project_name = project_name_and_version.project_name
+        version = project_name_and_version.version
 
         target = target or targets.current()
         interpreter = target.get_interpreter()
@@ -662,12 +664,11 @@ class Pip(object):
         install_cmd.append(wheel)
 
         def fixup_install(returncode):
+            # type: (int) -> None
             if returncode != 0:
                 return
             record = Record.from_prefix_install(
-                prefix_dir=install_dir,
-                project_name=project_name_and_version.project_name,
-                version=project_name_and_version.version,
+                prefix_dir=install_dir, project_name=project_name, version=version
             )
             record.fixup_install(interpreter=interpreter)
 

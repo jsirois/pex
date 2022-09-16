@@ -15,6 +15,7 @@ import pytest
 from pex import fs
 from pex.cli.testing import run_pex3
 from pex.common import chmod_plus_x, touch
+from pex.os import WINDOWS
 from pex.testing import IS_PYPY, pex_call, pex_check_call, pex_check_output, run_pex_command
 from pex.version import __version__
 
@@ -58,7 +59,7 @@ def file_path_length_limit(tmpdir_factory):
             path = os.path.join(path, "directory")
             try:
                 os.mkdir(path)
-            except OSError as e:
+            except (IOError, OSError) as e:
                 if e.errno == errno.ENAMETOOLONG:
                     return True
                 elif e.errno != errno.EEXIST:
@@ -93,14 +94,14 @@ def shebang_length_limit(
             path = os.path.join(path, "directory")
             try:
                 os.mkdir(path)
-            except OSError as e:
+            except (IOError, OSError) as e:
                 if e.errno != errno.EEXIST:
                     raise e
 
         sh_path = os.path.join(path, "x" * (length - len("#!\n" + path + os.sep)))
         try:
             os.unlink(sh_path)
-        except OSError as e:
+        except (IOError, OSError) as e:
             if e.errno != errno.ENOENT:
                 raise e
         fs.safe_symlink("/bin/sh", sh_path)
@@ -183,6 +184,7 @@ def too_deep_pex_root(
         pytest.param(["--venv", "--sh-boot"], id="VENV (--sh-boot)"),
     ],
 )
+@pytest.mark.skipif(WINDOWS, reason="XXX")
 def test_shebang_length_limit_runtime(
     tmpdir,  # type: Any
     execution_mode_args,  # type: List[str]
@@ -227,6 +229,7 @@ def test_shebang_length_limit_runtime(
     assert_pex_works(pex)
 
 
+@pytest.mark.skipif(WINDOWS, reason="XXX")
 def test_shebang_length_limit_buildtime_resolve(
     tmpdir,  # type: Any
     too_deep_pex_root,  # type: str
@@ -255,6 +258,7 @@ def test_shebang_length_limit_buildtime_resolve(
     )
 
 
+@pytest.mark.skipif(WINDOWS, reason="XXX")
 def test_shebang_length_limit_buildtime_lock_local_project(
     tmpdir,  # type: Any
     pex_project_dir,  # type: str

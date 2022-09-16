@@ -33,9 +33,20 @@ class Pyenv(object):
             pyenv_root = os.environ.get("PYENV_ROOT", "")
             if not pyenv_root:
                 for path_entry in os.environ.get("PATH", "").split(os.pathsep):
-                    pyenv_exe = os.path.join(path_entry, "pyenv")
+                    pyenv_exe = os.path.join(path_entry, "pyenv.bat" if WINDOWS else "pyenv")
                     if is_exe(pyenv_exe):
-                        process = subprocess.Popen(args=[pyenv_exe, "root"], stdout=subprocess.PIPE)
+                        try:
+                            process = subprocess.Popen(
+                                args=[pyenv_exe, "root"], stdout=subprocess.PIPE
+                            )
+                        except OSError as e:
+                            TRACER.log(
+                                "Skipping {pyenv_exe} executable. Not executable: {err}".format(
+                                    pyenv_exe=pyenv_exe, err=e
+                                ),
+                                V=6
+                            )
+                            continue
                         stdout, _ = process.communicate()
                         if process.returncode == 0:
                             pyenv_root = str(stdout).strip()
@@ -75,6 +86,10 @@ class Pyenv(object):
                     # PEP-3149. For example, python3.6m to indicate it was built with pymalloc.
                     [a-z]?
                 )?
+            )?
+            (?:
+                # Under pyenv-win.
+                \.bat
             )?
             $
             """,

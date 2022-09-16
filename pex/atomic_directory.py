@@ -22,7 +22,7 @@ class AtomicDirectory(object):
     def __init__(self, target_dir):
         # type: (str) -> None
         self._target_dir = target_dir
-        self._work_dir = "{}.{}".format(target_dir, uuid4().hex)
+        self._work_dir = "{}.{}".format(target_dir, uuid4().hex[:8])
 
     @property
     def work_dir(self):

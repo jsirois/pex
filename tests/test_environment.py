@@ -34,7 +34,7 @@ from pex.testing import (
     make_env,
     pex_check_output,
     temporary_content,
-    temporary_filename,
+    temporary_filename, pex_check_call, pex_call,
 )
 from pex.typing import TYPE_CHECKING
 
@@ -157,7 +157,7 @@ def assert_force_local_implicit_ns_packages_issues_598(
             for path in content.keys():
                 builder.add_source(os.path.join(project, path), path)
 
-    with temporary_dir() as root, temporary_dir() as cache:
+    with temporary_dir(cleanup=False) as root, temporary_dir(cleanup=False) as cache:
         pex_info1 = PexInfo.default()
         pex1 = os.path.join(root, "pex1.pex")
         builder1 = PEXBuilder(interpreter=interpreter, pex_info=pex_info1)
@@ -175,7 +175,9 @@ def assert_force_local_implicit_ns_packages_issues_598(
         builder2.set_script("foobaz")
         builder2.freeze()
 
-        assert 42 == PEX(pex2, interpreter=interpreter).run()
+        args = [interpreter.binary] if interpreter else []
+        args.append(pex2)
+        assert 42 == pex_call(args)
 
 
 def get_setuptools_requirement(interpreter=None):
