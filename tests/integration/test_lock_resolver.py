@@ -199,6 +199,8 @@ def requests_lock_findlinks(
         "requests",
         "-o",
         lock,
+        "-v",
+        "--preserve-pip-download-log",
     ).assert_success()
     return LockAndRepo(lock_file=lock, find_links_repo=find_links_repo)
 

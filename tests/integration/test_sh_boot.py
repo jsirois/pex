@@ -25,7 +25,9 @@ if TYPE_CHECKING:
     from typing import Any, Iterable, Iterator, List
 
 
-pytestmark = pytest.mark.skipif(WINDOWS, "The /bin/sh boot technique only works on Linux and Mac")
+pytestmark = pytest.mark.skipif(
+    WINDOWS, reason="The /bin/sh boot technique only works on Linux and Mac"
+)
 
 
 @pytest.mark.parametrize(

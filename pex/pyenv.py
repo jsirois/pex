@@ -44,7 +44,7 @@ class Pyenv(object):
                                 "Skipping {pyenv_exe} executable. Not executable: {err}".format(
                                     pyenv_exe=pyenv_exe, err=e
                                 ),
-                                V=6
+                                V=6,
                             )
                             continue
                         stdout, _ = process.communicate()

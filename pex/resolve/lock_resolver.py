@@ -382,7 +382,7 @@ def resolve_from_lock(
                         InstallRequest(
                             target=resolved_subset.target,
                             wheel_path=downloaded_artifact.path,
-                            fingerprint=downloaded_artifact.fingerprint[:8],
+                            fingerprint=downloaded_artifact.fingerprint,
                         )
                     )
                 else:

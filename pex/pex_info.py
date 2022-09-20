@@ -329,7 +329,7 @@ class PexInfo(object):
     def code_hash(self):
         # type: () -> Optional[str]
         code_hash = self._pex_info.get("code_hash")
-        return code_hash[:8] if code_hash else None
+        return code_hash if code_hash else None
 
     @code_hash.setter
     def code_hash(self, value):
@@ -340,7 +340,7 @@ class PexInfo(object):
     def pex_hash(self):
         # type: () -> Optional[str]
         pex_hash = self._pex_info.get("pex_hash")
-        return pex_hash[:8] if pex_hash else None
+        return pex_hash if pex_hash else None
 
     @pex_hash.setter
     def pex_hash(self, value):

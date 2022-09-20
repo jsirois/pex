@@ -1,6 +1,8 @@
 # Copyright 2022 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+from __future__ import print_function
+
 import os
 import re
 import shutil
@@ -72,7 +74,7 @@ def test_fingerprint_stability(
     # Although the project content hash is modified, we can still satisfy the local project
     # requirement from the Pex cache.
     with open(colors_package_file, "a") as fp:
-        fp.write("# Modified\n")
+        print("# Modified", file=fp)
     run_pex_command(args=print_colors_version_args).assert_success()
 
     # With the Pex cache cleared, we should find the project content hash is now mismatched to the
@@ -81,10 +83,12 @@ def test_fingerprint_stability(
     result = run_pex_command(args=print_colors_version_args)
     result.assert_failure()
     assert re.search(
-        r"There was 1 error downloading required artifacts:\n"
-        r"1\. ansicolors 1\.1\.8 from file://{project_dir}\n"
+        r"There was 1 error downloading required artifacts:{eol}"
+        r"1\. ansicolors 1\.1\.8 from file://{project_dir}{eol}"
         r"    Expected sha256 hash of [a-f0-9]+ when downloading "
-        r"ansicolors but hashed to [a-f0-9]+".format(project_dir=ansicolors_1_1_8),
+        r"ansicolors but hashed to [a-f0-9]+".format(
+            eol=re.escape(os.linesep), project_dir=ansicolors_1_1_8
+        ),
         result.error,
     ), result.error
 

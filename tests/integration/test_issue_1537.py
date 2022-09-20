@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 @pytest.mark.skipif(not PY3, reason="Test relies on a distribution that is Python 3 only.")
 @pytest.mark.skipif(
-    WINDOWS, "The run_proxy fixture requires os.mkfifo which does not exist on Windows."
+    WINDOWS, reason="The run_proxy fixture requires os.mkfifo which does not exist on Windows."
 )
 def test_rel_cert_path(
     run_proxy,  # type: Callable[[], ContextManager[Tuple[int, str]]]

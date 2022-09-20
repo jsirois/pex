@@ -702,7 +702,7 @@ def bootstrap_dir(
     bootstrap_hash,  # type: str
 ):
     # type: (...) -> str
-    return os.path.join(_expand_pex_root(pex_root), "bootstraps", bootstrap_hash[:8])
+    return os.path.join(_expand_pex_root(pex_root), "bootstraps", bootstrap_hash)
 
 
 def venv_dir(
@@ -773,9 +773,7 @@ def venv_dir(
     venv_contents_hash = hashlib.sha1(
         json.dumps(venv_contents, sort_keys=True).encode("utf-8")
     ).hexdigest()
-    venv_path = os.path.join(
-        _expand_pex_root(pex_root), "venvs", pex_hash[:8], venv_contents_hash[:8]
-    )
+    venv_path = os.path.join(_expand_pex_root(pex_root), "venvs", pex_hash, venv_contents_hash)
 
     def warn(message):
         # type: (str) -> None

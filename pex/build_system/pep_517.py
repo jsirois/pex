@@ -130,7 +130,9 @@ def build_sdist(
         except CalledProcessError as e:
             return Error(
                 "Failed to build sdist for local project {project_directory}: {err}\n"
-                "{stderr}".format(project_directory=project_directory, err=e, stderr=e.output)
+                "{stderr}".format(
+                    project_directory=project_directory, err=e, stderr=e.output.decode("utf-8")
+                )
             )
         sdist_relpath = cast(str, fp.read()).strip()
     return os.path.join(dist_dir, sdist_relpath)

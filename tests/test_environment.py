@@ -32,9 +32,11 @@ from pex.testing import (
     install_wheel,
     make_bdist,
     make_env,
+    pex_call,
+    pex_check_call,
     pex_check_output,
     temporary_content,
-    temporary_filename, pex_check_call, pex_call,
+    temporary_filename,
 )
 from pex.typing import TYPE_CHECKING
 

@@ -332,6 +332,8 @@ def _populate_sources(
         """\
         {shebang}
 
+        from __future__ import print_function
+
         if __name__ == "__main__":
             import os
             import sys
@@ -387,7 +389,7 @@ def _populate_sources(
                 not os.environ.pop(current_interpreter_blessed_env_var, None)
                 and sys_executable_paths().isdisjoint(iter_valid_venv_pythons())
             ):
-                sys.stderr.write("Re-execing from {{}}\\n".format(sys.executable))
+                print("Re-execing from {{}}".format(sys.executable), file=sys.stderr)
                 os.environ[current_interpreter_blessed_env_var] = "1"
                 safe_execv([python, "-sE"] + sys.argv)
 
@@ -446,12 +448,13 @@ def _populate_sources(
                 )
             ]
             if ignored_pex_env_vars:
-                sys.stderr.write(
-                    "Ignoring the following environment variables in Pex venv mode:\\n"
-                    "{{}}\\n\\n".format(
-                        os.linesep.join(sorted(ignored_pex_env_vars))
-                    )
+                print(
+                    "Ignoring the following environment variables in Pex venv mode:",
+                    file=sys.stderr
                 )
+                for ignored_pex_env_var in sorted(ignored_pex_env_vars):
+                    print(ignored_pex_env_var, file=sys.stderr)
+                print("", file=sys.stderr)
 
             os.environ["VIRTUAL_ENV"] = venv_dir
 
@@ -466,11 +469,10 @@ def _populate_sources(
                 elif bin_path == "append":
                     PATH.append(venv_bin_dir)
                 else:
-                    sys.stderr.write(
+                    print(
                         "PEX_VENV_BIN_PATH must be one of 'false', 'prepend' or 'append', given: "
-                        "{{!r}}\\n".format(
-                            bin_path
-                        )
+                        "{{!r}}".format(bin_path),
+                        file=sys.stderr
                     )
                     sys.exit(1)
                 os.environ["PATH"] = os.pathsep.join(PATH)
@@ -480,11 +482,12 @@ def _populate_sources(
                 key: os.environ.get(key) for key in PEX_EXEC_OVERRIDE_KEYS if key in os.environ
             }}
             if len(pex_overrides) > 1:
-                sys.stderr.write(
-                    "Can only specify one of {{overrides}}; found: {{found}}\\n".format(
+                print(
+                    "Can only specify one of {{overrides}}; found: {{found}}".format(
                         overrides=", ".join(PEX_EXEC_OVERRIDE_KEYS),
                         found=" ".join("{{}}={{}}".format(k, v) for k, v in pex_overrides.items())
-                    )
+                    ),
+                    file=sys.stderr
                 )
                 sys.exit(1)
             if {strip_pex_env!r}:
@@ -530,23 +533,25 @@ def _populate_sources(
                     main = sys.modules.get("__main__")
                     if not main or not main.__file__:
                         # N.B.: This should never happen.
-                        sys.stderr.write(
-                            "Unable to resolve PEX __main__ module file: {{}}\\n".format(main)
+                        print(
+                            "Unable to resolve PEX __main__ module file: {{}}".format(main),
+                            file=sys.stderr
                         )
                         sys.exit(1)
 
                     python = sys.executable
                     cmdline = [python] + python_options + [main.__file__] + args
-                    sys.stderr.write(
+                    print(
                         "Re-executing with Python interpreter options: "
-                        "cmdline={{cmdline!r}}\\n".format(cmdline=" ".join(cmdline))
+                        "cmdline={{cmdline!r}}".format(cmdline=" ".join(cmdline)),
+                        file=sys.stderr
                     )
                     safe_execv(cmdline)
 
                 arg = args[0]
                 if arg == "-m":
                     if len(args) < 2:
-                        sys.stderr.write("Argument expected for the -m option\\n")
+                        print("Argument expected for the -m option", file=sys.stderr)
                         sys.exit(2)
                     entry_point = module = args[1]
                     sys.argv = args[1:]
@@ -556,7 +561,7 @@ def _populate_sources(
                     sys.argv = args
                     if arg == "-c":
                         if len(args) < 2:
-                            sys.stderr.write("Argument expected for the -c option\\n")
+                            print("Argument expected for the -c option", file=sys.stderr)
                             sys.exit(2)
                         filename = "-c <cmd>"
                         content = args[1]

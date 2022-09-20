@@ -8,7 +8,7 @@ import os
 from collections import OrderedDict, defaultdict, deque
 
 from pex.common import pluralize
-from pex.compatibility import unquote, urlparse
+from pex.compatibility import url2pathname, urlparse
 from pex.dist_metadata import DistMetadata, Requirement
 from pex.enum import Enum
 from pex.orderedset import OrderedSet
@@ -109,7 +109,7 @@ class Artifact(object):
                 url=url, fingerprint=fingerprint, verified=verified, vcs=parsed_scheme.vcs
             )
 
-        path = unquote(url_info.path)
+        path = url2pathname(url_info.path)
         if "file" == parsed_scheme and os.path.isdir(path):
             directory = os.path.normpath(path)
             return LocalProjectArtifact(

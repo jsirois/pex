@@ -10,7 +10,7 @@ import pytest
 from pex.interpreter import PythonInterpreter
 from pex.resolve.lockfile import json_codec
 from pex.targets import LocalInterpreter, Target
-from pex.testing import PY27, PY37, IntegResults, ensure_python_interpreter, run_pex_command
+from pex.testing import PY27, PY38, IntegResults, ensure_python_interpreter, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -31,7 +31,7 @@ def py27():
 
 @pytest.fixture
 def py37():
-    return create_target(PY37)
+    return create_target(PY38)
 
 
 LOCK_STYLE_SOURCES = json_codec.loads(

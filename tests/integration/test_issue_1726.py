@@ -11,6 +11,7 @@ import pytest
 
 from pex.common import safe_open
 from pex.interpreter import PythonInterpreter
+from pex.os import WINDOWS
 from pex.testing import IS_PYPY, PY_VER, run_pex_command
 from pex.typing import TYPE_CHECKING
 
@@ -57,17 +58,20 @@ def test_check_install_issue_1726(
         "-c",
         "from jaraco import collections; print(collections.__file__)",
     ]
-    old_result = run_pex_command(
-        args=["pex==2.1.80", "-c", "pex", "--"] + pex_args,
-        # N.B.: Pex 2.1.80 only works on CPython 3.10 and older and PyPy 3.7 and older.
-        python=py310.binary if PY_VER > (3, 10) or (IS_PYPY and PY_VER > (3, 7)) else None,
-    )
-    old_result.assert_failure()
-    assert (
-        "Failed to resolve compatible distributions:\n"
-        "1: pex-test==0.1 requires jaraco-collections==3.5.1 but jaraco.collections 3.5.1 was "
-        "resolved" in old_result.error
-    )
+
+    # N.B.: Old Pex did not support Windows.
+    if not WINDOWS:
+        old_result = run_pex_command(
+            args=["pex==2.1.80", "-c", "pex", "--"] + pex_args,
+            # N.B.: Pex 2.1.80 only works on CPython 3.10 and older and PyPy 3.7 and older.
+            python=py310.binary if PY_VER > (3, 10) or (IS_PYPY and PY_VER > (3, 7)) else None,
+        )
+        old_result.assert_failure()
+        assert (
+            "Failed to resolve compatible distributions:\n"
+            "1: pex-test==0.1 requires jaraco-collections==3.5.1 but jaraco.collections 3.5.1 was "
+            "resolved" in old_result.error
+        )
 
     new_result = run_pex_command(args=pex_args)
     new_result.assert_success()

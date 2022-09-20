@@ -11,7 +11,7 @@ from pex.pep_503 import ProjectName
 from pex.pex_info import PexInfo
 from pex.testing import (
     PY27,
-    PY37,
+    PY38,
     PY310,
     ensure_python_interpreter,
     make_env,
@@ -97,7 +97,7 @@ def test_interpreter_resolution_with_pex_python_path():
         with open(pexrc_path, "w") as pexrc:
             # set pex python path
             pex_python_path = os.pathsep.join(
-                [ensure_python_interpreter(PY27), ensure_python_interpreter(PY37)]
+                [ensure_python_interpreter(PY27), ensure_python_interpreter(PY38)]
             )
             pexrc.write("PEX_PYTHON_PATH=%s" % pex_python_path)
 
@@ -134,7 +134,7 @@ def test_interpreter_constraints_honored_without_ppp_or_pp(tmpdir):
     # Create a pex with interpreter constraints, but for not the default interpreter in the path.
 
     py310_path = ensure_python_interpreter(PY310)
-    py37_path = ensure_python_interpreter(PY37)
+    py37_path = ensure_python_interpreter(PY38)
 
     pex_out_path = os.path.join(str(tmpdir), "pex.pex")
     env = make_env(
@@ -171,7 +171,7 @@ def test_interpreter_resolution_pex_python_path_precedence_over_pex_python(tmpdi
     # type: (Any) -> None
 
     pexrc_path = os.path.join(str(tmpdir), ".pexrc")
-    ppp = os.pathsep.join(os.path.dirname(ensure_python_interpreter(py)) for py in (PY27, PY37))
+    ppp = os.pathsep.join(os.path.dirname(ensure_python_interpreter(py)) for py in (PY27, PY38))
     with open(pexrc_path, "w") as pexrc:
         # set both PPP and PP
         pexrc.write(
@@ -298,7 +298,7 @@ def test_pex_exec_with_pex_python_path_and_pex_python_but_no_constraints(tmpdir)
 def test_pex_python():
     # type: () -> None
     py2_path_interpreter = ensure_python_interpreter(PY27)
-    py3_path_interpreter = ensure_python_interpreter(PY37)
+    py3_path_interpreter = ensure_python_interpreter(PY38)
     path = os.pathsep.join(
         [os.path.dirname(py2_path_interpreter), os.path.dirname(py3_path_interpreter)]
     )
@@ -306,7 +306,7 @@ def test_pex_python():
     with temporary_dir() as td:
         pexrc_path = os.path.join(td, ".pexrc")
         with open(pexrc_path, "w") as pexrc:
-            pex_python = ensure_python_interpreter(PY37)
+            pex_python = ensure_python_interpreter(PY38)
             pexrc.write("PEX_PYTHON=%s" % pex_python)
 
         # test PEX_PYTHON with valid constraints

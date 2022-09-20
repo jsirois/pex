@@ -92,15 +92,16 @@ def test_lock_create_universal_interpreter_constraint_unsatisfiable(
     assert (
         "When creating a universal lock with an --interpreter-constraint, an interpreter matching "
         "the constraint must be found on the local system but none was: Could not find a "
-        "compatible interpreter.\n"
-        "\n"
-        "Examined the following interpreters:\n"
-        "1.) {py27_path} {py27_req}\n"
-        "2.) {py37_path} {py37_req}\n"
-        "\n"
-        "No interpreter compatible with the requested constraints was found:\n"
-        "\n"
-        "  Version matches CPython<3.11,>=3.8\n".format(
+        "compatible interpreter.{eol}"
+        "{eol}"
+        "Examined the following interpreters:{eol}"
+        "1.) {py27_path} {py27_req}{eol}"
+        "2.) {py37_path} {py37_req}{eol}"
+        "{eol}"
+        "No interpreter compatible with the requested constraints was found:{eol}"
+        "{eol}"
+        "  Version matches CPython<3.11,>=3.8{eol}".format(
+            eol=os.linesep,
             py27_path=py27.binary,
             py27_req=py27.identity.requirement,
             py37_path=py37.binary,

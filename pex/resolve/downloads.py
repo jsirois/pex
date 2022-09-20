@@ -2,11 +2,12 @@ from __future__ import absolute_import
 
 import os.path
 import shutil
+import sys
 
 from pex import hashing
 from pex.atomic_directory import atomic_directory
 from pex.common import safe_mkdir, safe_mkdtemp
-from pex.compatibility import unquote, urlparse
+from pex.compatibility import unquote, url2pathname, urlparse
 from pex.fetcher import URLFetcher
 from pex.hashing import Sha256
 from pex.jobs import Job, Raise, SpawnedJob, execute_parallel
@@ -136,7 +137,7 @@ class ArtifactDownloader(object):
         download_dir = safe_mkdtemp(prefix="fingerprint_artifact.", dir=downloads)
 
         url_info = urlparse.urlparse(url)
-        src_file = urlparse.unquote(url_info.path)
+        src_file = url2pathname(url_info.path)
         temp_dest = os.path.join(download_dir, os.path.basename(src_file))
 
         if url_info.scheme == "file":
@@ -183,7 +184,7 @@ class ArtifactDownloader(object):
 
         url_info = urlparse.urlparse(artifact.url)
         if url_info.scheme == "file":
-            src_file = unquote(url_info.path)
+            src_file = url2pathname(url_info.path)
             try:
                 shutil.copy(src_file, dest_file)
             except (IOError, OSError) as e:

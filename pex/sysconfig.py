@@ -10,7 +10,10 @@ from pex.os import WINDOWS
 
 def script_name(name):
     # type: (str) -> str
-    return name + (sysconfig.get_config_var("EXE") or "")
+    extension = sysconfig.get_config_var("EXE") or ""
+    if name.endswith(extension):
+        return name
+    return name + extension
 
 
 # TODO(John Sirois): XXX: Use sysconfig.get_path("scripts", expand=False) +

@@ -5,7 +5,7 @@ import os
 import shutil
 
 from pex.testing import (
-    PY37,
+    PY38,
     PY310,
     ensure_python_interpreter,
     make_env,
@@ -23,7 +23,7 @@ def test_isolated_pex_zip(tmpdir):
 
     pex_root = os.path.join(str(tmpdir), "pex_root")
 
-    python37 = ensure_python_interpreter(PY37)
+    python37 = ensure_python_interpreter(PY38)
     python310 = ensure_python_interpreter(PY310)
 
     pex_env = make_env(PEX_PYTHON_PATH=os.pathsep.join((python37, python310)))
@@ -36,7 +36,7 @@ def test_isolated_pex_zip(tmpdir):
             "--runtime-pex-root",
             pex_root,
             "--interpreter-constraint",
-            "CPython=={version}".format(version=PY37),
+            "CPython=={version}".format(version=PY38),
         ]
 
     def tally_isolated_vendoreds():

@@ -95,7 +95,7 @@ def find_site_packages_dir(
         site_packages_dir = os.path.join(venv_dir, "site-packages")
     elif WINDOWS:
         # TODO(John Sirois): encapsulate in pex.sysconfig.
-        site_packages_dir = os.path.join(venv_dir, "Lib", "site-packages")
+        site_packages_dir = os.path.join(venv_dir, "lib", "site-packages")
     else:
         site_packages_dir = os.path.join(
             venv_dir,

@@ -15,13 +15,14 @@ def run_pex3(
     **popen_kwargs  # type: Any
 ):
     # type: (...) -> IntegResults
+    argv = (sys.executable, "-mpex.cli") + args
     process = subprocess.Popen(
-        args=[sys.executable, "-mpex.cli"] + list(args),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        **popen_kwargs
+        args=argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_kwargs
     )
     stdout, stderr = process.communicate()
     return IntegResults(
-        output=stdout.decode("utf-8"), error=stderr.decode("utf-8"), return_code=process.returncode
+        argv=argv,
+        output=stdout.decode("utf-8"),
+        error=stderr.decode("utf-8"),
+        return_code=process.returncode,
     )

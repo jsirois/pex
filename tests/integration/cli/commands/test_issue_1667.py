@@ -1,6 +1,8 @@
 # Copyright 2022 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+from __future__ import print_function
+
 import os.path
 import sys
 
@@ -33,7 +35,7 @@ def test_interpreter_constraints_range_coverage(
     # The traitlets 5.2.2 release breaks IPython.
     constraints = os.path.join(str(tmpdir), "constraints.txt")
     with open(constraints, "w") as fp:
-        fp.write("traitlets<5.2.2\n")
+        print("traitlets<5.2.2", file=fp)
 
     # We lock with an unconstrained IPython requirement and we know IPython latest does not support
     # Python 3.7. If locking respects ICs it should not pick latest, but a version that supports at

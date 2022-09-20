@@ -117,8 +117,12 @@ if PY3:
     from urllib.request import ProxyHandler as ProxyHandler
     from urllib.request import Request as Request
     from urllib.request import build_opener as build_opener
+    from urllib.request import pathname2url as pathname2url
+    from urllib.request import url2pathname as url2pathname
 else:
+    from urllib import pathname2url as pathname2url
     from urllib import unquote as unquote
+    from urllib import url2pathname as url2pathname
 
     import urlparse as urlparse
     from urllib2 import FileHandler as FileHandler

@@ -16,7 +16,7 @@ from pex.pex_bootstrapper import ensure_venv
 from pex.pex_info import PexInfo
 from pex.testing import (
     PY27,
-    PY37,
+    PY38,
     PY_VER,
     ensure_python_interpreter,
     make_env,
@@ -301,7 +301,7 @@ def test_boot_compatible_issue_1020_no_ic(tmpdir):
     assert_boot(sys.executable)
 
     other_interpreter = (
-        ensure_python_interpreter(PY27) if PY_VER != (2, 7) else ensure_python_interpreter(PY37)
+        ensure_python_interpreter(PY27) if PY_VER != (2, 7) else ensure_python_interpreter(PY38)
     )
     assert_boot(other_interpreter)
 
@@ -309,7 +309,7 @@ def test_boot_compatible_issue_1020_no_ic(tmpdir):
 def test_boot_compatible_issue_1020_ic_min_compatible_build_time_hole(tmpdir):
     # type: (Any) -> None
     other_interpreter = PythonInterpreter.from_binary(
-        ensure_python_interpreter(PY27) if PY_VER != (2, 7) else ensure_python_interpreter(PY37)
+        ensure_python_interpreter(PY27) if PY_VER != (2, 7) else ensure_python_interpreter(PY38)
     )
     current_interpreter = PythonInterpreter.get()
 

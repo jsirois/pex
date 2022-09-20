@@ -11,7 +11,7 @@ import re
 from collections import defaultdict
 
 from pex.common import safe_mkdtemp
-from pex.compatibility import unquote, urlparse
+from pex.compatibility import url2pathname, urlparse
 from pex.dist_metadata import ProjectNameAndVersion, Requirement
 from pex.interpreter_constraints import iter_compatible_versions
 from pex.orderedset import OrderedSet
@@ -104,7 +104,7 @@ class Locker(LogAnalyzer):
             fingerprint = Fingerprint(algorithm=algorithm, hash=hash_)
 
         pin = Pin.canonicalize(
-            ProjectNameAndVersion.from_filename(unquote(urlparse.urlparse(url).path))
+            ProjectNameAndVersion.from_filename(url2pathname(urlparse.urlparse(url).path))
         )
         partial_artifact = PartialArtifact(url, fingerprint)
         return pin, partial_artifact

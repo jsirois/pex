@@ -8,7 +8,7 @@ import sys
 
 from pex.testing import (
     PY27,
-    PY37,
+    PY38,
     PY310,
     ensure_python_interpreter,
     make_env,
@@ -65,7 +65,7 @@ def test_unconstrained_universal_venv_pex(tmpdir):
             assert "PEXWarning" not in stderr_text
 
     py27 = ensure_python_interpreter(PY27)
-    py37 = ensure_python_interpreter(PY37)
+    py37 = ensure_python_interpreter(PY38)
     py310 = ensure_python_interpreter(PY310)
 
     assert_uses_python(python=sys.executable, expected_version=sys.version_info[:2])

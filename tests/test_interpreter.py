@@ -23,7 +23,7 @@ from pex.pyenv import Pyenv
 from pex.testing import (
     ALL_PY_VERSIONS,
     PY27,
-    PY37,
+    PY38,
     PY310,
     PY_VER,
     ensure_python_distribution,
@@ -68,7 +68,7 @@ class TestPythonInterpreter(object):
     TEST_INTERPRETER1_VERSION = PY27
     TEST_INTERPRETER1_VERSION_TUPLE = tuple_from_version(TEST_INTERPRETER1_VERSION)
 
-    TEST_INTERPRETER2_VERSION = PY37
+    TEST_INTERPRETER2_VERSION = PY38
     TEST_INTERPRETER2_VERSION_TUPLE = tuple_from_version(TEST_INTERPRETER2_VERSION)
 
     @pytest.fixture
@@ -219,7 +219,7 @@ class TestPythonInterpreter(object):
 
     def test_pyenv_shims(self, tmpdir):
         # type: (Any) -> None
-        _, py37, _, run_pyenv = ensure_python_distribution(PY37)
+        _, py37, _, run_pyenv = ensure_python_distribution(PY38)
         py310 = ensure_python_interpreter(PY310)
 
         pyenv_root = str(run_pyenv(["root"]).strip())
@@ -266,19 +266,19 @@ class TestPythonInterpreter(object):
                 with pytest.raises(PythonInterpreter.IdentificationError):
                     interpreter_for_shim(shim_name)
 
-            pyenv_global(PY37, PY310)
+            pyenv_global(PY38, PY310)
             assert_shim("python", py37)
             assert_shim("python3", py37)
             assert_shim("python3.7", py37)
             assert_shim("python3.10", py310)
 
-            pyenv_global(PY310, PY37)
+            pyenv_global(PY310, PY38)
             assert_shim("python", py310)
             assert_shim("python3", py310)
             assert_shim("python3.10", py310)
             assert_shim("python3.7", py37)
 
-            pyenv_local(PY37)
+            pyenv_local(PY38)
             assert_shim("python", py37)
             assert_shim("python3", py37)
             assert_shim("python3.7", py37)
@@ -290,7 +290,7 @@ class TestPythonInterpreter(object):
                 assert_shim("python3.10", py310)
                 assert_shim_inactive("python3.7")
 
-            with pyenv_shell(PY37, PY310):
+            with pyenv_shell(PY38, PY310):
                 assert_shim("python", py37)
                 assert_shim("python3", py37)
                 assert_shim("python3.7", py37)
@@ -335,7 +335,7 @@ def test_latest_release_of_min_compatible_version():
 def test_detect_pyvenv(tmpdir):
     # type: (Any) -> None
     venv = str(tmpdir)
-    py37 = ensure_python_interpreter(PY37)
+    py37 = ensure_python_interpreter(PY38)
     real_interpreter = PythonInterpreter.from_binary(py37)
     real_interpreter.execute(["-m", "venv", venv])
     with pytest.raises(Executor.NonZeroExit):
@@ -396,7 +396,7 @@ def check_resolve_venv(real_interpreter):
 
 def test_resolve_venv():
     # type: () -> None
-    real_interpreter = PythonInterpreter.from_binary(ensure_python_interpreter(PY37))
+    real_interpreter = PythonInterpreter.from_binary(ensure_python_interpreter(PY38))
     check_resolve_venv(real_interpreter)
 
 
@@ -412,7 +412,7 @@ def test_resolve_venv_ambient():
 def test_identify_cwd_isolation_issues_1231(tmpdir):
     # type: (Any) -> None
 
-    python37, pip = ensure_python_venv(PY37)
+    python37, pip = ensure_python_venv(PY38)
     polluted_cwd = os.path.join(str(tmpdir), "dir")
     pex_check_call(args=[pip, "install", "--target", polluted_cwd, "pex==2.1.16"])
 

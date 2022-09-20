@@ -745,7 +745,7 @@ class PythonInterpreter(object):
         os_hash = os_digest.hexdigest()
 
         interpreter_cache_dir = os.path.join(ENV.PEX_ROOT, "interpreters")
-        os_cache_dir = os.path.join(interpreter_cache_dir, os_hash[:8])
+        os_cache_dir = os.path.join(interpreter_cache_dir, os_hash)
         if os.path.isdir(interpreter_cache_dir) and not os.path.isdir(os_cache_dir):
             with TRACER.timed("GCing interpreter cache from prior OS version"):
                 safe_rmtree(interpreter_cache_dir)
@@ -764,7 +764,7 @@ class PythonInterpreter(object):
         # name length limits.
         path_id = hashlib.sha1(binary.encode("utf-8")).hexdigest()
 
-        cache_dir = os.path.join(os_cache_dir, interpreter_hash[:8], path_id[:8])
+        cache_dir = os.path.join(os_cache_dir, interpreter_hash, path_id)
         cache_file = os.path.join(cache_dir, cls.INTERP_INFO_FILE)
         if os.path.isfile(cache_file):
             try:

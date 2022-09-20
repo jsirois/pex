@@ -166,7 +166,12 @@ def test_pex_path_collision_conflicting(tmpdir):
         # The --venv mode should warn about collisions but succeed.
         assert 0 == process.returncode, decoded_stderr
         assert "PEXWarning: Encountered collision building venv at " in decoded_stderr
-        assert "site-packages/colors.py was provided by:" in decoded_stderr
+        assert (
+            "{colors_path} was provided by:".format(
+                colors_path=os.path.join("site-packages", "colors.py")
+            )
+            in decoded_stderr
+        )
         assert "sha1:17772af8295ffb7f4d6c3353665b5c542be332a2 -> " in decoded_stderr
         assert "sha1:da39a3ee5e6b4b0d3255bfef95601890afd80709 -> " in decoded_stderr
 

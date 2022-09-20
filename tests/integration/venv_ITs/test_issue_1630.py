@@ -8,7 +8,7 @@ from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
 from pex.pep_376 import InstalledWheel
 from pex.pex_info import PexInfo
-from pex.testing import PY37, ensure_python_venv, pex_check_call, run_pex_command
+from pex.testing import PY38, ensure_python_venv, pex_check_call, run_pex_command
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
 
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 def test_data_files(tmpdir):
     # type: (Any) -> None
 
-    py37, pip = ensure_python_venv(PY37)
+    py38, pip = ensure_python_venv(PY38)
 
     pex_file = os.path.join(str(tmpdir), "pex.file")
     pex_root = os.path.join(str(tmpdir), "pex_root")
@@ -34,7 +34,7 @@ def test_data_files(tmpdir):
             "--runtime-pex-root",
             pex_root,
         ],
-        python=py37,
+        python=py38,
     ).assert_success()
 
     pex_info = PexInfo.from_pex(pex_file)
@@ -45,7 +45,7 @@ def test_data_files(tmpdir):
     )
 
     pex_venv = Virtualenv.create(
-        os.path.join(str(tmpdir), "pex.venv"), interpreter=PythonInterpreter.from_binary(py37)
+        os.path.join(str(tmpdir), "pex.venv"), interpreter=PythonInterpreter.from_binary(py38)
     )
     installed = list(InstalledWheel.load(nbconvert_dist.location).reinstall(pex_venv))
     assert installed
@@ -58,8 +58,8 @@ def test_data_files(tmpdir):
     # Check the rest by showing the venv created by Pex has all the same files as that created by
     # Pip.
     pex_check_call(args=[pip, "install", "--no-deps", "--no-compile", "nbconvert==6.4.2"])
-    pex_check_call(args=[py37, "-m", pip, "uninstall", "-y", "setuptools", "wheel", "pip"])
-    pip_venv = Virtualenv.enclosing(py37)
+    pex_check_call(args=[py38, "-mpip", "uninstall", "-y", "setuptools", "wheel", "pip"])
+    pip_venv = Virtualenv.enclosing(py38)
     assert pip_venv is not None
 
     def recursive_listing(venv):

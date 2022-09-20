@@ -11,7 +11,7 @@ import pytest
 from pex.common import safe_mkdtemp
 from pex.interpreter import PythonInterpreter
 from pex.pex_builder import PEXBuilder
-from pex.testing import PY37, PY310, ensure_python_interpreter
+from pex.testing import PY38, PY310, ensure_python_interpreter
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
 
@@ -26,7 +26,7 @@ else:
 @pytest.fixture(scope="module")
 def python37():
     # type: () -> PythonInterpreter
-    return PythonInterpreter.from_binary(ensure_python_interpreter(PY37))
+    return PythonInterpreter.from_binary(ensure_python_interpreter(PY38))
 
 
 @pytest.fixture(scope="module")

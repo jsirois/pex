@@ -56,7 +56,7 @@ def serve_authenticated(username, password, find_links):
                 self.send_header("WWW-Authenticate", 'Basic realm="Foo"')
                 self.end_headers()
 
-    server = HTTPServer(("", 0), BasicHTTPAuthHandler)
+    server = HTTPServer(("localhost", 0), BasicHTTPAuthHandler)
     server_dispatch_thread = Thread(target=server.serve_forever)
     server_dispatch_thread.daemon = True
     cwd = os.getcwd()

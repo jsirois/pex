@@ -75,5 +75,5 @@ def test_preserve_pip_download_log_none():
     assert green("42") == result.output.strip()
     assert (
         "pex: The `pip download` log is not being utilized, to see more `pip download` details, "
-        "re-run with more Pex verbosity (more `-v`s).\n"
+        "re-run with more Pex verbosity (more `-v`s).{}".format(os.linesep)
     ) in result.error

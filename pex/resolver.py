@@ -340,7 +340,7 @@ class InstallRequest(object):
     ):
         # type: (...) -> InstallRequest
         fingerprint = fingerprint_path(wheel_path)
-        return cls(target=target, wheel_path=wheel_path, fingerprint=fingerprint[:8])
+        return cls(target=target, wheel_path=wheel_path, fingerprint=fingerprint)
 
     target = attr.ib()  # type: Target
     wheel_path = attr.ib()  # type: str

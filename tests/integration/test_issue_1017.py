@@ -1,12 +1,12 @@
 # Copyright 2021 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from pex.testing import PY37, ensure_python_interpreter, run_pex_command
+from pex.testing import PY38, ensure_python_interpreter, run_pex_command
 
 
 def test_resolve_python_requires_full_version():
     # type: () -> None
-    python37 = ensure_python_interpreter(PY37)
+    python37 = ensure_python_interpreter(PY38)
     result = run_pex_command(
         python=python37,
         args=[

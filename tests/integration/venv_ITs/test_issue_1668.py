@@ -2,16 +2,9 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os.path
+import sys
 
-from pex.testing import (
-    PY37,
-    ensure_python_interpreter,
-    make_env,
-    pex_check_call,
-    pex_check_output,
-    pex_project_dir,
-    run_pex_command,
-)
+from pex.testing import make_env, pex_check_call, pex_check_output, pex_project_dir, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -30,12 +23,11 @@ def assert_venv_runtime_env_vars_ignored_during_create(
         args.append("--venv")
     run_pex_command(args=args).assert_success()
 
-    py37 = ensure_python_interpreter(PY37)
     pex_root = os.path.join(str(tmpdir), "pex_root")
     lock = os.path.join(str(tmpdir), "lock.json")
     pex_check_call(
         args=[
-            py37,
+            sys.executable,
             pex_pex,
             "lock",
             "create",
@@ -50,7 +42,7 @@ def assert_venv_runtime_env_vars_ignored_during_create(
     ansicolors_path = (
         pex_check_output(
             args=[
-                py37,
+                sys.executable,
                 pex_pex,
                 "--pex-root",
                 pex_root,

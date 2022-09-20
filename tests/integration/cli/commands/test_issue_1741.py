@@ -67,11 +67,11 @@ def test_prereleases(
     result.assert_failure()
     assert (
         "Dependency on opentelemetry-instrumentation-httpx not satisfied, 1 incompatible "
-        "candidate found:\n"
+        "candidate found:{eol}"
         "1.) opentelemetry-instrumentation-httpx {version} does not satisfy the following "
-        "requirements:\n"
-        "    <0.31 (via: opentelemetry-instrumentation-httpx[instruments]<0.31)\n".format(
-            version=expected_version
+        "requirements:{eol}"
+        "    <0.31 (via: opentelemetry-instrumentation-httpx[instruments]<0.31){eol}".format(
+            eol=os.linesep, version=expected_version
         )
     ) in result.error, result.error
 

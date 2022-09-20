@@ -6,7 +6,6 @@ from __future__ import absolute_import, print_function
 import contextlib
 import itertools
 import os
-import platform
 import random
 import subprocess
 import sys
@@ -14,10 +13,16 @@ from contextlib import contextmanager
 from textwrap import dedent
 from typing import Sequence
 
-import pytest
-
 from pex.atomic_directory import atomic_directory
-from pex.common import open_zip, safe_mkdir, safe_mkdtemp, safe_rmtree, safe_sleep, temporary_dir
+from pex.common import (
+    is_python_script,
+    open_zip,
+    safe_mkdir,
+    safe_mkdtemp,
+    safe_rmtree,
+    safe_sleep,
+    temporary_dir,
+)
 from pex.compatibility import to_unicode
 from pex.dist_metadata import Distribution
 from pex.executor import Executor
@@ -31,6 +36,7 @@ from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.targets import LocalInterpreter
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
+from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 
 if TYPE_CHECKING:
     from typing import (
@@ -345,21 +351,33 @@ def write_simple_pex(
 class IntegResults(object):
     """Convenience object to return integration run results."""
 
+    argv = attr.ib()  # type: Tuple[Text, ...]
     output = attr.ib()  # type: Text
     error = attr.ib()  # type: Text
     return_code = attr.ib()  # type: int
 
+    def _failure_message(self, expectation):
+        return (
+            "Expected {expectation} for {argv} but got exit code {exit_code}\n"
+            "STDOUT:\n"
+            "{stdout}\n"
+            "STDERR:\n"
+            "{stderr}".format(
+                expectation=expectation,
+                argv=" ".join(self.argv),
+                exit_code=self.return_code,
+                stdout=self.output,
+                stderr=self.error,
+            )
+        )
+
     def assert_success(self):
         # type: () -> None
-        assert (
-            self.return_code == 0
-        ), "integration test failed: return_code={}, output={}, error={}".format(
-            self.return_code, self.output, self.error
-        )
+        assert self.return_code == 0, self._failure_message("success")
 
     def assert_failure(self):
         # type: () -> None
-        assert self.return_code != 0
+        assert self.return_code != 0, self._failure_message("failure")
 
 
 def create_pex_command(
@@ -394,7 +412,12 @@ def run_pex_command(
         cmd=cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     output, error = process.communicate()
-    return IntegResults(output.decode("utf-8"), error.decode("utf-8"), process.returncode)
+    return IntegResults(
+        argv=tuple(cmd),
+        output=output.decode("utf-8"),
+        error=error.decode("utf-8"),
+        return_code=process.returncode,
+    )
 
 
 def run_simple_pex(
@@ -458,11 +481,11 @@ def bootstrap_python_installer(dest):
 # issues with the combination of 7 total unique interpreter versions and a Travis-CI timeout of 50
 # minutes for a shard.
 PY27 = "2.7.18"
-PY37 = "3.7.9" if WINDOWS else "3.7.11"
+PY38 = "3.8.10"
 PY310 = "3.10.6"
 
-ALL_PY_VERSIONS = (PY27, PY37, PY310)
-_ALL_PY3_VERSIONS = (PY37, PY310)
+ALL_PY_VERSIONS = (PY27, PY38, PY310)
+_ALL_PY3_VERSIONS = (PY38, PY310)
 
 
 def ensure_python_distribution(version):
@@ -550,7 +573,7 @@ def ensure_python_venv(version, latest_pip=True, system_site_packages=False):
         os.path.join(venv, SCRIPT_DIR, script_name(exe)) for exe in ("python", "pip")
     )
     if latest_pip:
-        pex_check_call(args=[pip, "install", "-U", "pip<22.1"])
+        pex_check_call(args=[python, "-mpip", "install", "-U", "pip<22.1"])
     return python, pip
 
 
@@ -678,19 +701,26 @@ def pex_project_dir():
     return str(pex_check_output(["git", "rev-parse", "--show-toplevel"]).decode("ascii").strip())
 
 
-def is_pex(path):
-    # type: (str) -> bool
+def _maybe_load_pex_info(path):
+    # type: (str) -> Optional[PexInfo]
     try:
-        PexInfo.from_pex(path)
-        return True
+        return PexInfo.from_pex(path)
     except (KeyError, IOError, OSError):
-        return False
+        return None
 
 
 def _safe_args(args):
     # type: (Sequence[str]) -> List[str]
-    if WINDOWS and args[0].endswith((".py", ".pyz", ".pex")) or is_pex(args[0]):
-        return [sys.executable] + list(args)
+    if WINDOWS:
+        argv0 = args[0]
+        pex_info = _maybe_load_pex_info(argv0)
+        if pex_info and is_python_script(argv0):
+            try:
+                return [Virtualenv(os.path.dirname(argv0)).interpreter.binary] + list(args)
+            except InvalidVirtualenvError:
+                pass
+        if pex_info or argv0.endswith(".py"):
+            return [sys.executable] + list(args)
     return args if isinstance(args, list) else list(args)
 
 

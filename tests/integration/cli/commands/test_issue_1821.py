@@ -33,8 +33,8 @@ def test_non_universal_target_system_unsupported(style):
     result = run_pex3("lock", "create", "--style", style, "--target-system", "linux", "ansicolors")
     result.assert_failure()
     assert (
-        "The --target-system option only applies to --style {universal} locks.\n".format(
-            universal=LockStyle.UNIVERSAL
+        "The --target-system option only applies to --style {universal} locks.{eol}".format(
+            universal=LockStyle.UNIVERSAL, eol=os.linesep
         )
         == result.error
     )

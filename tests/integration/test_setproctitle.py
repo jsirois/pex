@@ -20,11 +20,11 @@ if TYPE_CHECKING:
     from typing import Any, Tuple
 
 
-@pytest.mark.skipif(WINDOWS, reason="Windows does not have os.mkfifo.")
 @pytest.mark.parametrize("venv", [pytest.param(True, id="VENV"), pytest.param(False, id="UNZIP")])
 @pytest.mark.parametrize(
     "layout", [pytest.param(layout, id=layout.value) for layout in Layout.values()]
 )
+@pytest.mark.skipif(WINDOWS, reason="Windows does not have os.mkfifo.")
 def test_setproctitle(
     tmpdir,  # type: Any
     venv,  # type: bool

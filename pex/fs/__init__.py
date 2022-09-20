@@ -25,7 +25,7 @@ if WINDOWS and not hasattr(os, "replace"):
         # type: (...) -> None
 
         import ctypes
-        from ctypes.wintypes import LPCWSTR, DWORD, BOOL
+        from ctypes.wintypes import BOOL, DWORD, LPCWSTR
 
         global _MF
         if _MF is None:
@@ -65,7 +65,7 @@ if WINDOWS and (not hasattr(os, "symlink") or sys.version_info[:2] < (3, 8)):
         # type: (...) -> None
 
         import ctypes
-        from ctypes.wintypes import LPCWSTR, DWORD, BOOLEAN
+        from ctypes.wintypes import BOOLEAN, DWORD, LPCWSTR
 
         global _CSL
         if _CSL is None:
@@ -102,7 +102,7 @@ if WINDOWS and not hasattr(os, "link"):
         # type: (...) -> None
 
         import ctypes
-        from ctypes.wintypes import LPCWSTR, BOOL
+        from ctypes.wintypes import BOOL, LPCWSTR
 
         global _CHL
         if _CHL is None:

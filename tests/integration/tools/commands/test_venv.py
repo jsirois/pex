@@ -9,6 +9,7 @@ from textwrap import dedent
 from colors import cyan
 
 from pex.common import filter_pyc_files, safe_open
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.testing import (
     IntegResults,
     make_env,
@@ -29,14 +30,18 @@ if TYPE_CHECKING:
 def run_pex_tools(*args):
     # type: (*str) -> IntegResults
 
+    argv = (sys.executable, "-mpex.tools") + args
     process = pex_popen(
-        args=[sys.executable, "-mpex.tools"] + list(args),
+        args=argv,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     stdout, stderr = process.communicate()
     return IntegResults(
-        output=stdout.decode("utf-8"), error=stderr.decode("utf-8"), return_code=process.returncode
+        argv=argv,
+        output=stdout.decode("utf-8"),
+        error=stderr.decode("utf-8"),
+        return_code=process.returncode,
     )
 
 
@@ -98,17 +103,25 @@ def test_collisions(
     venv_dir = os.path.join(str(tmpdir), "collisions.venv")
     result = run_pex_tools(collisions_pex, "venv", venv_dir)
     result.assert_failure()
+
+    template = dict(
+        eol=os.linesep,
+        venv_dir=venv_dir,
+        pex=collisions_pex,
+        pex_script=os.path.join(venv_dir, SCRIPT_DIR, script_name("pex")),
+    )
+
     assert (
-        "Encountered collision building venv at {venv_dir} from {pex}:\n"
-        "1. {venv_dir}/bin/pex was provided by:".format(venv_dir=venv_dir, pex=collisions_pex)
+        "Encountered collision building venv at {venv_dir} from {pex}:{eol}"
+        "1. {pex_script} was provided by:".format(**template)
     ) in result.error
 
     result = run_pex_tools(collisions_pex, "venv", "--collisions-ok", "--force", venv_dir)
     result.assert_success()
     assert (
-        "PEXWarning: Encountered collision building venv at {venv_dir} from {pex}:\n"
-        "1. {venv_dir}/bin/pex was provided by:".format(venv_dir=venv_dir, pex=collisions_pex)
-    ) in result.error
+        "PEXWarning: Encountered collision building venv at {venv_dir} from {pex}:{eol}"
+        "1. {pex_script} was provided by:".format(**template)
+    ) in result.error, result.error
     assert 42 == pex_call(args=[Virtualenv(venv_dir=venv_dir).bin_path("pex")])
 
 

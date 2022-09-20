@@ -448,7 +448,9 @@ def test_venv_entrypoint_function_exit_code_issue_1241(tmpdir):
         assert expected_stdout == stdout.decode("utf-8")
         assert expected_stderr == stderr.decode("utf-8")
 
-    assert_venv_process(args=["bob"], expected_returncode=1, expected_stderr="bob\n")
+    assert_venv_process(
+        args=["bob"], expected_returncode=1, expected_stderr="bob{}".format(os.linesep)
+    )
     assert_venv_process(args=["42"], expected_returncode=42)
 
 
@@ -683,7 +685,7 @@ def test_warn_unused_pex_env_vars():
         stdout, stderr = process.communicate()
         assert 0 == process.returncode
         assert not stdout
-        assert expected_stderr.strip() == stderr.decode("utf-8").strip()
+        assert expected_stderr.strip().splitlines() == stderr.decode("utf-8").strip().splitlines()
 
     assert_execute_venv_pex(expected_stderr="")
     assert_execute_venv_pex(expected_stderr="", PEX_ROOT=os.path.join(tmpdir, "pex_root"))

@@ -13,14 +13,14 @@ import pytest
 
 from pex.cli.testing import run_pex3
 from pex.common import safe_open
-from pex.compatibility import urlparse
+from pex.compatibility import pathname2url, urlparse
 from pex.resolve.locked_resolve import VCSArtifact
 from pex.resolve.lockfile import json_codec
-from pex.testing import pex_check_call, pex_check_output, run_pex_command
+from pex.testing import make_env, pex_check_call, pex_check_output, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Any
+    from typing import Any, Iterable, Optional
 
     import attr  # vendor:skip
 else:
@@ -41,7 +41,9 @@ class TestTool(object):
     def create_lock(self, *args):
         # type: (*str) -> str
         lock = tempfile.mktemp(prefix="lock.", dir=self.tmpdir)
-        run_pex3("lock", "create", "--pex-root", self.pex_root, "-o", lock, *args).assert_success()
+        run_pex3(
+            "lock", "create", "-v", "--pex-root", self.pex_root, "-o", lock, *args
+        ).assert_success()
         return lock
 
     def create_pex(
@@ -227,14 +229,31 @@ def test_vcs_transitive(
     with safe_open(os.path.join(src, "setup.py"), "w") as fp:
         fp.write("from setuptools import setup; setup()")
 
-    pex_check_call(args=["git", "init", src])
-    pex_check_call(args=["git", "config", "user.email", "forty@two.com"], cwd=src)
-    pex_check_call(args=["git", "config", "user.name", "Douglas Adams"], cwd=src)
-    pex_check_call(args=["git", "checkout", "-b", "Golgafrincham"], cwd=src)
-    pex_check_call(args=["git", "add", "."], cwd=src)
-    pex_check_call(args=["git", "commit", "-m", "Only commit."], cwd=src)
+    def git(
+        args,  # type: Iterable[str]
+        cwd=None,  # type: Optional[str]
+    ):
+        # type: (...) -> None
+        pex_check_call(
+            args=["git"] + list(args),
+            cwd=cwd,
+            env=make_env(
+                GIT_CONFIG_SYSTEM=os.devnull,
+                GIT_CONFIG_GLOBAL=os.devnull,
+                GIT_CONFIG_COUNT=1,
+                GIT_CONFIG_KEY_0="init.defaultBranch",
+                GIT_CONFIG_VALUE_0="Golgafrincham",
+            ),
+        )
 
-    lock = test_tool.create_lock("git+file://{src}#egg=poetry".format(src=src))
+    git(["init", src])
+    git(["config", "user.email", "forty@two.com"], cwd=src)
+    git(["config", "user.name", "Douglas Adams"], cwd=src)
+    git(["checkout", "-b", "Golgafrincham"], cwd=src)
+    git(["add", "."], cwd=src)
+    git(["commit", "-m", "Only commit."], cwd=src)
+
+    lock = test_tool.create_lock("git+file:{src}#egg=poetry".format(src=pathname2url(src)))
     pex = test_tool.create_pex(lock, "-c", "recite")
     assert (
         colors.green("Prostetnic Vogon Jeltz")

@@ -113,13 +113,13 @@ def assert_missing_mappings(
     result = run_pex3(*lock_args)
     result.assert_failure()
     assert result.error == (
-        "The lockfile at {lock} requires specifying a '--path-mapping' value for: FL\n"
-        "Given no path mappings.\n"
-        "Which left the following path mappings unspecified:\n"
-        "FL: The local find links repo path.\n"
-        "\n"
-        "To fix, add command line options for:\n"
-        "--path-mapping 'FL|<path of FL>'\n".format(lock=lock)
+        "The lockfile at {lock} requires specifying a '--path-mapping' value for: FL{eol}"
+        "Given no path mappings.{eol}"
+        "Which left the following path mappings unspecified:{eol}"
+        "FL: The local find links repo path.{eol}"
+        "{eol}"
+        "To fix, add command line options for:{eol}"
+        "--path-mapping 'FL|<path of FL>'{eol}".format(lock=lock, eol=os.linesep)
     )
 
 
