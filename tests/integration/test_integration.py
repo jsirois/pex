@@ -17,7 +17,7 @@ import pytest
 
 from pex import fs
 from pex.common import safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
-from pex.compatibility import to_bytes
+from pex.compatibility import commonpath
 from pex.dist_metadata import Distribution, Requirement
 from pex.fetcher import URLFetcher
 from pex.interpreter import PythonInterpreter
@@ -30,8 +30,8 @@ from pex.testing import (
     IS_MAC,
     NOT_CPYTHON27,
     NOT_CPYTHON27_OR_OSX,
-    PY27,
     PY38,
+    PY39,
     PY310,
     PY_VER,
     IntegResults,
@@ -46,6 +46,7 @@ from pex.testing import (
     run_pex_command,
     run_simple_pex,
     run_simple_pex_test,
+    skip_unless_python27,
     temporary_content,
 )
 from pex.typing import TYPE_CHECKING, cast
@@ -275,19 +276,19 @@ def test_entry_point_exit_code(tmpdir):
 def test_pex_multi_resolve():
     # type: () -> None
     """Tests multi-interpreter + multi-platform resolution."""
-    python27 = ensure_python_interpreter(PY27)
     python38 = ensure_python_interpreter(PY38)
+    python39 = ensure_python_interpreter(PY39)
     with temporary_dir() as output_dir:
         pex_path = os.path.join(output_dir, "pex.pex")
         results = run_pex_command(
             [
                 "--disable-cache",
-                "lxml==4.2.4",
+                "lxml==4.6.1",
                 "--no-build",
                 "--platform=linux-x86_64-cp-36-m",
-                "--platform=macosx-10.6-x86_64-cp-36-m",
-                "--python={}".format(python27),
+                "--platform=macosx-10.9-x86_64-cp-36-m",
                 "--python={}".format(python38),
+                "--python={}".format(python39),
                 "-o",
                 pex_path,
             ]
@@ -296,7 +297,7 @@ def test_pex_multi_resolve():
 
         included_dists = get_dep_dist_names_from_pex(pex_path, "lxml")
         assert len(included_dists) == 4
-        for dist_substr in ("-cp27-", "-cp36-", "-cp37-", "-manylinux1_x86_64", "-macosx_"):
+        for dist_substr in ("-cp36-", "-cp38-", "-cp39-", "-manylinux1_x86_64", "-macosx_"):
             assert any(dist_substr in f for f in included_dists)
 
 
@@ -783,7 +784,7 @@ def test_multiplatform_entrypoint():
                 "--python={}".format(interpreter),
                 "--python-shebang=#!{}".format(interpreter),
                 "--platform=linux-x86_64-cp-37-m",
-                "--platform=macosx-10.13-x86_64-cp-37-m",
+                "--platform=macosx-10.15-x86_64-cp-37-m",
                 "-c",
                 "p537",
                 "-o",
@@ -876,7 +877,7 @@ def test_pex_interpreter_interact_custom_setuptools_useable():
 
 def test_setup_python():
     # type: () -> None
-    interpreter = ensure_python_interpreter(PY27)
+    interpreter = ensure_python_interpreter(PY39)
     with temporary_dir() as out:
         pex = os.path.join(out, "pex.pex")
         results = run_pex_command(
@@ -888,7 +889,7 @@ def test_setup_python():
 
 def test_setup_interpreter_constraint():
     # type: () -> None
-    interpreter = ensure_python_interpreter(PY27)
+    interpreter = ensure_python_interpreter(PY39)
     with temporary_dir() as out:
         pex = os.path.join(out, "pex.pex")
         env = make_env(
@@ -899,7 +900,7 @@ def test_setup_interpreter_constraint():
             [
                 "jsonschema==2.6.0",
                 "--disable-cache",
-                "--interpreter-constraint=CPython=={}".format(PY27),
+                "--interpreter-constraint=CPython=={}".format(PY39),
                 "-o",
                 pex,
             ],
@@ -914,8 +915,8 @@ def test_setup_interpreter_constraint():
 def test_setup_python_path():
     # type: () -> None
     """Check that `--python-path` is used rather than the default $PATH."""
-    py27_interpreter_dir = os.path.dirname(ensure_python_interpreter(PY27))
     py38_interpreter_dir = os.path.dirname(ensure_python_interpreter(PY38))
+    py39_interpreter_dir = os.path.dirname(ensure_python_interpreter(PY39))
     with temporary_dir() as out:
         pex = os.path.join(out, "pex.pex")
         # Even though we set $PATH="", we still expect for both interpreters to be used when
@@ -924,9 +925,9 @@ def test_setup_python_path():
             [
                 "more-itertools==5.0.0",
                 "--disable-cache",
-                "--interpreter-constraint=CPython>={},<={}".format(PY27, PY38),
+                "--interpreter-constraint=CPython>={},<={}".format(PY38, PY39),
                 "--python-path={}".format(
-                    os.pathsep.join([py27_interpreter_dir, py38_interpreter_dir])
+                    os.pathsep.join([py38_interpreter_dir, py39_interpreter_dir])
                 ),
                 "-o",
                 pex,
@@ -936,16 +937,6 @@ def test_setup_python_path():
         results.assert_success()
 
         py310_interpreter = PythonInterpreter.from_binary(ensure_python_interpreter(PY310))
-
-        py27_env = make_env(PEX_IGNORE_RCFILES="1", PATH=py27_interpreter_dir)
-        stdout, rc = run_simple_pex(
-            pex,
-            interpreter=py310_interpreter,
-            env=py27_env,
-            stdin=b"import more_itertools, sys; print(sys.version_info[:2])",
-        )
-        assert rc == 0
-        assert b"(2, 7)" in stdout
 
         py38_env = make_env(PEX_IGNORE_RCFILES="1", PATH=py38_interpreter_dir)
         stdout, rc = run_simple_pex(
@@ -957,10 +948,20 @@ def test_setup_python_path():
         assert rc == 0
         assert b"(3, 8)" in stdout
 
+        py39_env = make_env(PEX_IGNORE_RCFILES="1", PATH=py39_interpreter_dir)
+        stdout, rc = run_simple_pex(
+            pex,
+            interpreter=py310_interpreter,
+            env=py39_env,
+            stdin=b"import more_itertools, sys; print(sys.version_info[:2])",
+        )
+        assert rc == 0
+        assert b"(3, 9)" in stdout
+
 
 def test_setup_python_multiple_transitive_markers():
     # type: () -> None
-    py27_interpreter = ensure_python_interpreter(PY27)
+    py27_interpreter = skip_unless_python27()
     py310_interpreter = ensure_python_interpreter(PY310)
     with temporary_dir() as out:
         pex = os.path.join(out, "pex.pex")
@@ -983,19 +984,19 @@ def test_setup_python_multiple_transitive_markers():
             "import jsonschema, os, sys; print(os.path.realpath(sys.executable))"
         ]
 
-        py27_env = make_env(PATH=os.path.dirname(py27_interpreter))
-        pex_check_call(py2_only_program, env=py27_env)
+        subprocess.check_call([py27_interpreter] + py2_only_program)
 
-        stdout = pex_check_output(both_program, env=py27_env)
-        assert to_bytes(os.path.realpath(py27_interpreter)) == stdout.strip()
+        stdout = subprocess.check_output([py27_interpreter] + both_program)
+        assert os.path.realpath(py27_interpreter) == stdout.decode("utf-8").strip()
 
-        py38_env = make_env(PATH=os.path.dirname(py310_interpreter))
         with pytest.raises(subprocess.CalledProcessError) as err:
-            pex_check_output(py2_only_program, stderr=subprocess.STDOUT, env=py38_env)
+            subprocess.check_output(
+                [py310_interpreter] + py2_only_program, stderr=subprocess.STDOUT
+            )
         assert b"ModuleNotFoundError: No module named 'functools32'" in err.value.output
 
-        stdout = pex_check_output(both_program, env=py38_env)
-        assert to_bytes(os.path.realpath(py310_interpreter)) == stdout.strip()
+        stdout = subprocess.check_output([py310_interpreter] + both_program)
+        assert os.path.realpath(py310_interpreter) == stdout.decode("utf-8").strip()
 
 
 def test_setup_python_direct_markers():
@@ -1018,10 +1019,9 @@ def test_setup_python_direct_markers():
         py2_only_program = [pex, "-c", "import subprocess32"]
 
         with pytest.raises(subprocess.CalledProcessError) as err:
-            pex_check_output(
-                py2_only_program,
+            subprocess.check_output(
+                [py310_interpreter] + py2_only_program,
                 stderr=subprocess.STDOUT,
-                env=make_env(PATH=os.path.dirname(py310_interpreter)),
             )
         assert b"ModuleNotFoundError: No module named 'subprocess32'" in err.value.output
 
@@ -1029,7 +1029,7 @@ def test_setup_python_direct_markers():
 def test_setup_python_multiple_direct_markers():
     # type: () -> None
     py310_interpreter = ensure_python_interpreter(PY310)
-    py27_interpreter = ensure_python_interpreter(PY27)
+    py27_interpreter = skip_unless_python27()
     with temporary_dir() as out:
         pex = os.path.join(out, "pex.pex")
         results = run_pex_command(
@@ -1048,17 +1048,16 @@ def test_setup_python_multiple_direct_markers():
         py2_only_program = [pex, "-c", "import subprocess32"]
 
         with pytest.raises(subprocess.CalledProcessError) as err:
-            pex_check_output(
-                py2_only_program,
+            subprocess.check_output(
+                [py310_interpreter] + py2_only_program,
                 stderr=subprocess.STDOUT,
-                env=make_env(PATH=os.path.dirname(py310_interpreter)),
             )
         assert (
             re.search(b"ModuleNotFoundError: No module named 'subprocess32'", err.value.output)
             is not None
         )
 
-        pex_check_call(py2_only_program, env=make_env(PATH=os.path.dirname(py27_interpreter)))
+        subprocess.check_call([py27_interpreter] + py2_only_program)
 
 
 def build_and_execute_pex_with_warnings(*extra_build_args, **extra_runtime_env):
@@ -1101,7 +1100,7 @@ def test_no_emit_warnings_verbose_override():
 
 def test_trusted_host_handling():
     # type: () -> None
-    python = ensure_python_interpreter(PY27)
+    python = skip_unless_python27()
     # Since we explicitly ask Pex to find links at http://www.antlr3.org/download/Python, it should
     # implicitly trust the www.antlr3.org host.
     results = run_pex_command(
@@ -1414,7 +1413,7 @@ def test_venv_mode(
     isort_pex_args,  # type: Tuple[str, List[str]]
 ):
     # type: (...) -> None
-    other_interpreter_version = PY310 if sys.version_info[0] == 2 else PY27
+    other_interpreter_version = PY310 if sys.version_info[:2] == (3, 9) else PY39
     other_interpreter = ensure_python_interpreter(other_interpreter_version)
 
     pex_file, args = isort_pex_args
@@ -1444,7 +1443,7 @@ def test_venv_mode(
                 pex_hash=pex_hash,
                 has_interpreter_constraints=False,
             )
-        assert expected_venv_home == os.path.commonprefix([pex_interpreter, expected_venv_home])
+        assert expected_venv_home == commonpath([pex_interpreter, expected_venv_home])
         return pex_interpreter
 
     isort_pex_interpreter1 = run_isort_pex()

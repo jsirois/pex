@@ -336,13 +336,12 @@ class PythonIdentity(object):
             return requirement
         elif isinstance(requirement, string):
             try:
-                requirement = Requirement.parse(requirement)
+                return Requirement.parse(requirement)
             except RequirementParseError:
                 try:
-                    requirement = Requirement.parse("%s%s" % (default_interpreter, requirement))
+                    return Requirement.parse("%s%s" % (default_interpreter, requirement))
                 except RequirementParseError:
                     raise ValueError("Unknown requirement string: %s" % requirement)
-            return requirement
         else:
             raise ValueError("Unknown requirement type: %r" % (requirement,))
 

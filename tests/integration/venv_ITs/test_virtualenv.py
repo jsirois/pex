@@ -8,7 +8,7 @@ import pytest
 
 from pex.dist_metadata import Distribution
 from pex.pep_503 import ProjectName
-from pex.testing import ALL_PY_VERSIONS, ensure_python_venv, pex_check_call
+from pex.testing import VenvFactory, all_python_venvs, pex_check_call
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 
@@ -62,15 +62,17 @@ def test_iter_distributions_setuptools_not_leaked(tmpdir):
     assert ProjectName("setuptools") not in dists
 
 
-@pytest.mark.parametrize("py_version", ALL_PY_VERSIONS)
-def test_iter_distributions(
-    tmpdir,  # type: Any
-    py_version,  # type: str
-):
-    # type: (...) -> None
+@pytest.mark.parametrize(
+    "venv_factory",
+    [
+        pytest.param(venv_factory, id=venv_factory.python_version)
+        for venv_factory in all_python_venvs()
+    ],
+)
+def test_iter_distributions(venv_factory):
+    # type: (VenvFactory) -> None
 
-    python, pip = ensure_python_venv(py_version)
-
+    python, pip = venv_factory.create_venv()
     venv = Virtualenv.enclosing(python)
     assert venv is not None
 

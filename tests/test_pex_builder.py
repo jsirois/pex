@@ -10,6 +10,7 @@ import zipfile
 import pytest
 
 from pex.common import open_zip, safe_open, temporary_dir, touch
+from pex.compatibility import commonpath
 from pex.layout import Layout
 from pex.pex import PEX
 from pex.pex_builder import CopyMode, PEXBuilder
@@ -308,7 +309,7 @@ def test_pex_builder_packed(tmpdir):
     for root, dirs, files in os.walk(pex_app, followlinks=False):
         for f in files:
             path = os.path.join(root, f)
-            assert not os.path.islink(path) or pex_app == os.path.commonprefix(
+            assert not os.path.islink(path) or pex_app == commonpath(
                 [pex_app, os.path.realpath(path)]
             ), (
                 "All packed layout files should be real files inside the packed layout root that "

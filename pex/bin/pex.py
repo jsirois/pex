@@ -17,7 +17,6 @@ from textwrap import TextWrapper
 
 from pex import pex_warnings
 from pex.argparse import HandleBoolAction
-from pex.bin.sh_boot import create_sh_boot_script
 from pex.commands.command import (
     GlobalConfigurationError,
     global_environment,
@@ -826,15 +825,11 @@ def do_main(
         log("Saving PEX file to {pex_file}".format(pex_file=pex_file), V=options.verbosity)
         if options.sh_boot:
             with TRACER.timed("Creating /bin/sh boot script"):
-                pex_builder.set_shebang("/bin/sh")
-                script = create_sh_boot_script(
+                pex_builder.set_sh_boot_script(
                     pex_name=pex_file,
-                    pex_info=pex.pex_info(),
                     targets=targets,
-                    interpreter=pex.interpreter,
                     python_shebang=options.python_shebang,
                 )
-                pex_builder.set_header(script)
 
         pex_builder.build(
             pex_file,

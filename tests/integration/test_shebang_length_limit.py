@@ -113,7 +113,7 @@ def shebang_length_limit(
         chmod_plus_x(script)
         try:
             return 0 != pex_call(args=[script])
-        except OSError as e:
+        except (IOError, OSError) as e:
             if e.errno == errno.ENOEXEC:
                 return True
             raise e

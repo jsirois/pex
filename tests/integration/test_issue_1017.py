@@ -6,9 +6,9 @@ from pex.testing import PY38, ensure_python_interpreter, run_pex_command
 
 def test_resolve_python_requires_full_version():
     # type: () -> None
-    python37 = ensure_python_interpreter(PY38)
+    python38 = ensure_python_interpreter(PY38)
     result = run_pex_command(
-        python=python37,
+        python=python38,
         args=[
             "pandas==1.0.5",
             "--",

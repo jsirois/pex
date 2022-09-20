@@ -24,7 +24,7 @@ else:
 
 
 @pytest.fixture(scope="module")
-def python37():
+def python38():
     # type: () -> PythonInterpreter
     return PythonInterpreter.from_binary(ensure_python_interpreter(PY38))
 
@@ -82,11 +82,11 @@ class InterpreterTool(object):
 
 @pytest.fixture(scope="module")
 def interpreter_tool(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     python310,  # type: PythonInterpreter
 ):
     # type: (...) -> InterpreterTool
-    return InterpreterTool.create(python37, python310)
+    return InterpreterTool.create(python38, python310)
 
 
 def expected_basic(interpreter):
@@ -95,23 +95,23 @@ def expected_basic(interpreter):
 
 
 def test_basic(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run()
-    assert expected_basic(python37) == output.strip()
+    assert expected_basic(python38) == output.strip()
 
 
 def test_basic_all(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     python310,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run("-a")
     assert [
-        expected_basic(interpreter) for interpreter in (python37, python310)
+        expected_basic(interpreter) for interpreter in (python38, python310)
     ] == output.splitlines()
 
 
@@ -125,22 +125,22 @@ def expected_verbose(interpreter):
 
 
 def test_verbose(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run("-v")
-    assert expected_verbose(python37) == json.loads(output)
+    assert expected_verbose(python38) == json.loads(output)
 
 
 def test_verbose_all(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     python310,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run("-va")
-    assert [expected_verbose(interpreter) for interpreter in (python37, python310)] == [
+    assert [expected_verbose(interpreter) for interpreter in (python38, python310)] == [
         json.loads(line) for line in output.splitlines()
     ]
 
@@ -153,22 +153,22 @@ def expected_verbose_verbose(interpreter):
 
 
 def test_verbose_verbose(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run("-vv")
-    assert expected_verbose_verbose(python37) == json.loads(output)
+    assert expected_verbose_verbose(python38) == json.loads(output)
 
 
 def test_verbose_verbose_verbose(
-    python37,  # type: PythonInterpreter
+    python38,  # type: PythonInterpreter
     interpreter_tool,  # type: InterpreterTool
 ):
     # type: (...) -> None
     output = interpreter_tool.run("-vvv")
-    expected = expected_verbose_verbose(python37)
-    expected.update(env_markers=python37.identity.env_markers.as_dict(), venv=False)
+    expected = expected_verbose_verbose(python38)
+    expected.update(env_markers=python38.identity.env_markers.as_dict(), venv=False)
     assert expected == json.loads(output)
 
 

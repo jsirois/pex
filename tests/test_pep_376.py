@@ -69,7 +69,7 @@ def test_filter_path_relative():
 
 
 def test_installed_file_path_normalization_noop(
-    py37,  # type: PythonInterpreter
+    py38,  # type: PythonInterpreter
     py310,  # type: PythonInterpreter
 ):
     # type: (...) -> None
@@ -87,25 +87,25 @@ def test_installed_file_path_normalization_noop(
         )
 
     assert_noop()
-    assert_noop(py37)
+    assert_noop(py38)
     assert_noop(py310)
 
 
 def test_installed_file_path_normalization_nominal(
-    py37,  # type: PythonInterpreter
+    py38,  # type: PythonInterpreter
     py310,  # type: PythonInterpreter
 ):
     # type: (...) -> None
 
     assert os.path.join("foo", "pythonX.Y", "bar") == InstalledFile.normalized_path(
-        "foo/python3.7/bar", interpreter=py37
+        "foo/python3.8/bar", interpreter=py38
     )
     assert os.path.join("foo", "pythonX.Y", "bar") == InstalledFile.normalized_path(
         "foo/python3.10/bar", interpreter=py310
     )
 
-    assert os.path.join("foo", "python3.7", "bar") == InstalledFile.denormalized_path(
-        "foo/pythonX.Y/bar", interpreter=py37
+    assert os.path.join("foo", "python3.8", "bar") == InstalledFile.denormalized_path(
+        "foo/pythonX.Y/bar", interpreter=py38
     )
     assert os.path.join("foo", "python3.10", "bar") == InstalledFile.denormalized_path(
         "foo/pythonX.Y/bar", interpreter=py310
