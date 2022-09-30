@@ -9,6 +9,7 @@ import pytest
 from pex.common import temporary_dir
 from pex.inherit_path import InheritPath
 from pex.orderedset import OrderedSet
+from pex.os import WINDOWS
 from pex.pex_info import PexInfo
 from pex.pex_warnings import PEXWarning
 from pex.typing import TYPE_CHECKING
@@ -96,6 +97,7 @@ def test_build_properties():
     assert pex_version == PexInfo.default().build_properties["pex_version"]
 
 
+@pytest.mark.skipif(WINDOWS, reason="Directory ACL checks are not implemented for Windows: XXX")
 def test_pex_root_set_unwriteable():
     # type: () -> None
     with temporary_dir() as td:

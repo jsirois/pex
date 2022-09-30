@@ -16,15 +16,7 @@ from typing import Sequence
 import pytest
 
 from pex.atomic_directory import atomic_directory
-from pex.common import (
-    is_python_script,
-    open_zip,
-    safe_mkdir,
-    safe_mkdtemp,
-    safe_rmtree,
-    safe_sleep,
-    temporary_dir,
-)
+from pex.common import open_zip, safe_mkdir, safe_mkdtemp, safe_rmtree, safe_sleep, temporary_dir
 from pex.compatibility import to_unicode
 from pex.dist_metadata import Distribution
 from pex.enum import Enum
@@ -35,6 +27,7 @@ from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
 from pex.pip.installation import get_pip
+from pex.script import is_python_script
 from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.targets import LocalInterpreter
 from pex.typing import TYPE_CHECKING, cast
@@ -97,7 +90,7 @@ def get_dep_dist_names_from_pex(pex_path, match_prefix=""):
     # type: (str, str) -> Set[str]
     """Given an on-disk pex, extract all of the unique first-level paths under `.deps`."""
     with open_zip(pex_path) as pex_zip:
-        dep_gen = (f.split(os.sep)[1] for f in pex_zip.namelist() if f.startswith(".deps/"))
+        dep_gen = (f.split("/")[1] for f in pex_zip.namelist() if f.startswith(".deps/"))
         return set(item for item in dep_gen if item.startswith(match_prefix))
 
 
@@ -146,8 +139,8 @@ def make_project(
             zip_safe=%(zip_safe)r,
             packages=[%(project_name)r],
             scripts=[
-              'scripts/hello_world',
-              'scripts/shell_script',
+              'scripts/%(hello_world_script_name)s',
+              'scripts/%(shell_script_name)s',
             ],
             package_data={%(project_name)r: ['package_data/*.dat']},
             install_requires=%(install_requires)r,
@@ -158,13 +151,35 @@ def make_project(
             )
             """
         ),
-        "scripts/hello_world": '#!/usr/bin/env python\nprint("hello world from py script!")\n',
-        "scripts/shell_script": "#!/usr/bin/env bash\necho hello world from shell script\n",
         os.path.join(name, "__init__.py"): 0,
         os.path.join(name, "my_module.py"): 'def do_something():\n  print("hello world!")\n',
         os.path.join(name, "package_data/resource1.dat"): 1000,
         os.path.join(name, "package_data/resource2.dat"): 1000,
     }  # type: Dict[str, Union[str, int]]
+
+    if WINDOWS:
+        project_content.update(
+            (
+                (
+                    "scripts/hello_world.py",
+                    '#!/usr/bin/env python\r\nprint("hello world from py script!")\r\n',
+                ),
+                ("scripts/shell_script.bat", "@echo off\r\necho hello world from shell script\r\n"),
+            )
+        )
+    else:
+        project_content.update(
+            (
+                (
+                    "scripts/hello_world",
+                    '#!/usr/bin/env python\nprint("hello world from py script!")\n',
+                ),
+                (
+                    "scripts/shell_script",
+                    "#!/usr/bin/env bash\necho hello world from shell script\n",
+                ),
+            )
+        )
 
     interp = {
         "project_name": name,
@@ -175,6 +190,8 @@ def make_project(
         "entry_points": entry_points or {},
         "python_requires": python_requires,
         "universal": universal,
+        "hello_world_script_name": "hello_world.py" if WINDOWS else "hello_world",
+        "shell_script_name": "shell_script.bat" if WINDOWS else "shell_script",
     }
 
     with temporary_content(project_content, interp=interp) as td:
@@ -497,14 +514,31 @@ _ALL_PY_VERSIONS_TO_VERSION_INFO = {
 }
 
 
+@attr.s(frozen=True)
+class PythonDistribution(object):
+    interpreter_locations = attr.ib()  # type: str
+    executable = attr.ib()  # type: str
+    version = attr.ib()  # type: Tuple[int, ...]
+    pip = attr.ib()  # type: str
+    pyenv = attr.ib()  # type: str
+    pyenv_root = attr.ib()  # type: str
+
+    def execute_pyenv(self, *args):
+        # type: (*str) -> Text
+        pass
+
+
+# TODO(John Sirois): XXX: Return a data structure that contains Pyenv execution function as well as
+#  PYENV_ROOT, etc...
 def ensure_python_distribution(version):
     # type: (str) -> Tuple[str, str, str, Callable[[Iterable[str]], Text]]
     if version not in ALL_PY_VERSIONS:
         raise ValueError("Please constrain version to one of {}".format(ALL_PY_VERSIONS))
 
-    # assert (
-    #     not WINDOWS or version == PY310
-    # ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
+    assert not WINDOWS or _ALL_PY_VERSIONS_TO_VERSION_INFO[version][:2] >= (
+        3,
+        8,
+    ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
 
     basedir = os.path.expanduser(os.environ.get("_PEX_TEST_PYENV_ROOT", "~/.pex_dev"))
     clone_dir = os.path.abspath(os.path.join(basedir, "pyenv-win" if WINDOWS else "pyenv"))
@@ -628,9 +662,14 @@ def skip_unless_python27(
     implementation=InterpreterImplementation.CPython,  # type: InterpreterImplementation.Value
 ):
     # type: (...) -> str
+
+    if WINDOWS:
+        pytest.skip("Pex for Windows does not support Python 2.7")
+
     python = find_python_interpreter(version=(2, 7), implementation=implementation)
     if python is not None:
         return python
+
     pytest.skip("Test requires a Python 2.7 on the PATH")
     raise AssertionError("Unreachable.")
 
@@ -663,9 +702,17 @@ def skip_unless_python27_venv(
     )
 
 
+def _applicable_py_versions():
+    # type: () -> Iterable[str]
+    for version in ALL_PY_VERSIONS:
+        if WINDOWS and _ALL_PY_VERSIONS_TO_VERSION_INFO[version][:2] < (3, 8):
+            continue
+        yield version
+
+
 def all_pythons():
     # type: () -> Tuple[str, ...]
-    return tuple(ensure_python_interpreter(version) for version in ALL_PY_VERSIONS)
+    return tuple(ensure_python_interpreter(version) for version in _applicable_py_versions())
 
 
 @attr.s(frozen=True)
@@ -685,7 +732,7 @@ def all_python_venvs(system_site_packages=False):
             python_version=version,
             factory=lambda: ensure_python_venv(version, system_site_packages=system_site_packages),
         )
-        for version in ALL_PY_VERSIONS
+        for version in _applicable_py_versions()
     )
 
 
@@ -719,8 +766,11 @@ def pushd(directory):
         os.chdir(cwd)
 
 
-def make_env(**kwargs):
-    # type: (**Any) -> Dict[str, str]
+def make_env(
+    *args,  # type: Tuple[str, Any]
+    **kwargs  # type: Any
+):
+    # type: (...) -> Dict[str, str]
     """Create a copy of the current environment with the given modifications.
 
     The given kwargs add to or update the environment when they have a non-`None` value. When they
@@ -729,8 +779,9 @@ def make_env(**kwargs):
     All non-`None` values are converted to strings by apply `str`.
     """
     env = os.environ.copy()
-    env.update((k, str(v)) for k, v in kwargs.items() if v is not None)
-    for k, v in kwargs.items():
+    entries = args + tuple(kwargs.items())
+    env.update((k, str(v)) for k, v in entries if v is not None)
+    for k, v in entries:
         if v is None:
             env.pop(k, None)
     return env

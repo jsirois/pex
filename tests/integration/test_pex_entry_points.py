@@ -5,6 +5,7 @@ import os.path
 from textwrap import dedent
 
 from pex.common import safe_open
+from pex.os import WINDOWS
 from pex.testing import make_project, pex_check_output, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
@@ -46,13 +47,17 @@ def test_script(tmpdir):
     ) as project:
 
         run_pex_command(args=[project, "-c", "my_app", "-o", pex]).assert_success()
-        assert b"hello world!\n" == pex_check_output(args=[pex])
+        assert b"hello world!" == pex_check_output(args=[pex]).strip()
 
-        run_pex_command(args=[project, "-c", "hello_world", "-o", pex]).assert_success()
-        assert b"hello world from py script!\n" == pex_check_output(args=[pex])
+        run_pex_command(
+            args=[project, "-c", "hello_world.py" if WINDOWS else "hello_world", "-o", pex]
+        ).assert_success()
+        assert b"hello world from py script!" == pex_check_output(args=[pex]).strip()
 
-        run_pex_command(args=[project, "-c", "shell_script", "-o", pex]).assert_success()
-        assert b"hello world from shell script\n" == pex_check_output(args=[pex])
+        run_pex_command(
+            args=[project, "-c", "shell_script.bat" if WINDOWS else "shell_script", "-o", pex]
+        ).assert_success()
+        assert b"hello world from shell script" == pex_check_output(args=[pex]).strip()
 
 
 def test_entry_point(tmpdir):

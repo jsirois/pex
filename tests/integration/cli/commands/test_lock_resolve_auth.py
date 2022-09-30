@@ -14,6 +14,7 @@ import pytest
 from pex.cli.testing import run_pex3
 from pex.common import safe_rmtree
 from pex.compatibility import PY2
+from pex.os import HOME_ENV_VAR
 from pex.testing import IntegResults, make_env, run_pex_command
 from pex.typing import TYPE_CHECKING
 
@@ -166,13 +167,13 @@ def assert_unauthorized(
     # type: (...) -> IntegResults
     result.assert_failure()
     assert (
-        "There was 1 error downloading required artifacts:\n"
-        "1. ansicolors 1.1.8 from {repo_url}/ansicolors-1.1.8-py2.py3-none-any.whl\n"
+        "There was 1 error downloading required artifacts:{eol}"
+        "1. ansicolors 1.1.8 from {repo_url}/ansicolors-1.1.8-py2.py3-none-any.whl{eol}"
         "    ERROR: Could not install requirement ansicolors==1.1.8 from "
         "{repo_url}/ansicolors-1.1.8-py2.py3-none-any.whl because of HTTP error 401 Client Error: "
         "Unauthorized for url: {repo_url}/ansicolors-1.1.8-py2.py3-none-any.whl for URL "
         "{repo_url}/ansicolors-1.1.8-py2.py3-none-any.whl".format(
-            repo_url=secured_ansicolors_lock.repo_url
+            eol=os.linesep, repo_url=secured_ansicolors_lock.repo_url
         )
     ) in result.error, result.error
 
@@ -261,7 +262,8 @@ def test_authenticated_lock_netrc_issue_1753(
     with open(os.path.join(home, ".netrc"), "w") as fp:
         print("machine foo login bar password baz", file=fp)
     assert_unauthorized(
-        secured_ansicolors_lock, run_pex_command(args=use_lock_command, env=make_env(HOME=home))
+        secured_ansicolors_lock,
+        run_pex_command(args=use_lock_command, env=make_env((HOME_ENV_VAR, home))),
     )
 
     def assert_authorized(result):
@@ -279,7 +281,7 @@ def test_authenticated_lock_netrc_issue_1753(
             ),
             file=fp,
         )
-    assert_authorized(run_pex_command(args=use_lock_command, env=make_env(HOME=home)))
+    assert_authorized(run_pex_command(args=use_lock_command, env=make_env((HOME_ENV_VAR, home))))
 
     with open(os.path.join(home, ".netrc"), "w") as fp:
         print(
@@ -291,7 +293,7 @@ def test_authenticated_lock_netrc_issue_1753(
             file=fp,
         )
     safe_rmtree(secured_ansicolors_lock.pex_root)
-    assert_authorized(run_pex_command(args=use_lock_command, env=make_env(HOME=home)))
+    assert_authorized(run_pex_command(args=use_lock_command, env=make_env((HOME_ENV_VAR, home))))
 
     with open(os.path.join(home, ".netrc"), "w") as fp:
         print(
@@ -302,7 +304,7 @@ def test_authenticated_lock_netrc_issue_1753(
             file=fp,
         )
     safe_rmtree(secured_ansicolors_lock.pex_root)
-    assert_authorized(run_pex_command(args=use_lock_command, env=make_env(HOME=home)))
+    assert_authorized(run_pex_command(args=use_lock_command, env=make_env((HOME_ENV_VAR, home))))
 
 
 def test_bad_netrc_issue_1762(
@@ -341,19 +343,19 @@ def test_bad_netrc_issue_1762(
     def assert_netrc_skipped(result):
         # type: (IntegResults) -> None
         assert (
-            "Failed to load netrc credentials: bad follower token 'protocol' ({netrc}, line 3)\n"
-            "Continuing without netrc credentials.".format(netrc=netrc_path)
-        ) in result.error
+            "Failed to load netrc credentials: bad follower token 'protocol' ({netrc}, line 3){eol}"
+            "Continuing without netrc credentials.".format(netrc=netrc_path, eol=os.linesep)
+        ) in result.error, result.error
 
     result = assert_unauthorized(
         secured_ansicolors_lock,
-        run_pex_command(args=use_lock_command, env=make_env(HOME=home), quiet=True),
+        run_pex_command(args=use_lock_command, env=make_env((HOME_ENV_VAR, home)), quiet=True),
     )
     assert_netrc_skipped(result)
 
     result = run_pex_command(
         args=["--find-links", secured_ansicolors_lock.repo_url_with_credentials] + use_lock_command,
-        env=make_env(HOME=home),
+        env=make_env((HOME_ENV_VAR, home)),
         quiet=True,
     )
     result.assert_success()

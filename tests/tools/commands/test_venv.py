@@ -22,6 +22,7 @@ from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.os import WINDOWS
 from pex.pex_builder import CopyMode, PEXBuilder
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.testing import (
     IS_PYPY,
     PY310,
@@ -107,7 +108,7 @@ def make_env(**kwargs):
 @pytest.fixture
 def create_pex_venv(pex):
     # type: (str) -> Iterator[CreatePexVenv]
-    with temporary_dir(cleanup=False) as tmpdir:
+    with temporary_dir() as tmpdir:
         venv_dir = os.path.join(tmpdir, "venv")
 
         def _create_pex_venv(*options):
@@ -254,7 +255,7 @@ def test_binary_path(create_pex_venv):
 
         def try_invoke(*args):
             try:
-                pex_check_call(list(args))
+                subprocess.check_call(list(args))
                 return 0
             except OSError as e:
                 if e.errno == errno.ENOENT:
@@ -273,7 +274,10 @@ def test_binary_path(create_pex_venv):
     returncode, stdout, stderr = execute_venv_pex_interpreter(
         venv, code=code, PATH=tempfile.gettempdir()
     )
-    assert 111 == returncode, stdout + stderr
+    # N.B.: Windows venv python.exe implicitly puts its Script directory on the PATH; so it can
+    # always see the sibling scripts.
+    expected_returncode = 0 if WINDOWS else 111
+    assert expected_returncode == returncode, stdout + stderr
 
     venv_bin_path = create_pex_venv("-f", "--bin-path", "prepend")
     returncode, _, _ = execute_venv_pex_interpreter(
@@ -468,14 +472,17 @@ def test_venv_copies(tmpdir):
     venv_symlinks = os.path.join(str(tmpdir), "venv.symlinks")
     pex_check_call(args=[python310, pex_file, "venv", venv_symlinks], env=PEX_TOOLS)
     venv_symlinks_interpreter = PythonInterpreter.from_binary(
-        os.path.join(venv_symlinks, "bin", "python")
+        os.path.join(venv_symlinks, SCRIPT_DIR, script_name("python"))
     )
-    assert os.path.islink(venv_symlinks_interpreter.binary)
+    assert os.path.islink(venv_symlinks_interpreter.binary) or WINDOWS, (
+        "Expected the default venv to use symlinks, except on Windows where venvs should always "
+        "use copies."
+    )
 
     venv_copies = os.path.join(str(tmpdir), "venv.copies")
     pex_check_call(args=[python310, pex_file, "venv", "--copies", venv_copies], env=PEX_TOOLS)
     venv_copies_interpreter = PythonInterpreter.from_binary(
-        os.path.join(venv_copies, "bin", "python")
+        os.path.join(venv_copies, SCRIPT_DIR, script_name("python"))
     )
     assert not os.path.islink(venv_copies_interpreter.binary)
 
@@ -508,18 +515,21 @@ def test_relocatable_venv(tmpdir):
 
     relocated_relpath = "relocated.venv"
     relocated_venv = os.path.join(str(tmpdir), relocated_relpath)
+    shutil.move(venv, relocated_venv)
 
     # Since the venv pex script contains a shebang with an absolute path to the venv python
-    # interpreter, a move of the venv makes the script un-runnable directly.
-    shutil.move(venv, relocated_venv)
-    with pytest.raises(OSError) as exec_info:
-        pex_check_call(args=[os.path.join(relocated_venv, "pex")])
-    assert errno.ENOENT == exec_info.value.errno
+    # interpreter, a move of the venv makes the script un-runnable directly. The Windows py launcher
+    # falls back to symbolic pythons (falls back to the basename); so this test is only for
+    # Linux and Mac.
+    if not WINDOWS:
+        with pytest.raises(OSError) as exec_info:
+            pex_check_call(args=[os.path.join(relocated_venv, "pex")])
+        assert errno.ENOENT == exec_info.value.errno
 
     # But we should be able to run the script using the moved venv's interpreter.
     pex_check_call(
         args=[
-            os.path.join(relocated_relpath, "bin", "python"),
+            os.path.join(relocated_venv, SCRIPT_DIR, script_name("python")),
             os.path.join(relocated_relpath, "pex"),
         ],
         cwd=str(tmpdir),
@@ -566,6 +576,8 @@ def test_compile(tmpdir):
     # and it does not add a getsitepackages function to site.py; so we cheat.
     if IS_PYPY and PY_VER <= (3, 7):
         site_packages = "site-packages"
+    elif WINDOWS:
+        site_packages = os.path.join("Lib", "site-packages")
     else:
         site_packages = os.path.join(
             "lib",

@@ -11,8 +11,9 @@ from contextlib import contextmanager
 
 from pex import fs
 from pex.atomic_directory import atomic_directory
-from pex.common import is_script, open_zip, safe_copy, safe_mkdir
+from pex.common import open_zip, safe_copy, safe_mkdir
 from pex.enum import Enum
+from pex.script import is_script
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.variables import bootstrap_dir, unzip_dir

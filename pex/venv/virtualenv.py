@@ -13,7 +13,7 @@ from contextlib import closing
 from fileinput import FileInput
 
 from pex.atomic_directory import AtomicDirectory, atomic_directory
-from pex.common import is_exe, safe_mkdir, safe_open
+from pex.common import safe_mkdir, safe_open
 from pex.compatibility import commonpath, get_stdout_bytes_buffer
 from pex.dist_metadata import Distribution, find_distributions
 from pex.executor import Executor
@@ -21,7 +21,7 @@ from pex.fetcher import URLFetcher
 from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
-from pex.os import WINDOWS
+from pex.os import WINDOWS, is_exe
 from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
@@ -216,6 +216,13 @@ class Virtualenv(object):
             args = ["-m", "venv", "--without-pip", venv_dir]
             if copies:
                 args.append("--copies")
+            # TODO(John Sirois): XXX:
+            # # N.B.: Venvs created with symlinks yield python.exe symlinks that do not work; so
+            # # we always avoid them on WINDOWS.
+            # if copies or WINDOWS:
+            #     args.append("--copies")
+            # else:
+            #     args.append("--symlinks")
             if system_site_packages:
                 args.append("--system-site-packages")
             if prompt and py_major_minor >= (3, 6):

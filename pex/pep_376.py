@@ -15,11 +15,12 @@ from contextlib import closing
 from fileinput import FileInput
 
 from pex import dist_metadata, fs, hashing
-from pex.common import filter_pyc_dirs, filter_pyc_files, is_python_script, safe_mkdir, safe_open
+from pex.common import filter_pyc_dirs, filter_pyc_files, safe_mkdir, safe_open
 from pex.compatibility import get_stdout_bytes_buffer, urlparse
 from pex.dist_metadata import Distribution, EntryPoint
 from pex.interpreter import PythonInterpreter
 from pex.os import WINDOWS
+from pex.script import is_python_script
 from pex.sysconfig import SCRIPT_DIR
 from pex.typing import TYPE_CHECKING, cast
 from pex.venv.virtualenv import Virtualenv

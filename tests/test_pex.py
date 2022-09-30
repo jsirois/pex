@@ -15,7 +15,7 @@ import pytest
 
 from pex import fs, resolver
 from pex.common import safe_mkdir, safe_open, temporary_dir
-from pex.compatibility import PY2, to_bytes
+from pex.compatibility import PY2, WINDOWS, to_bytes
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
 from pex.pex import PEX
@@ -30,6 +30,7 @@ from pex.testing import (
     environment_as,
     install_wheel,
     make_bdist,
+    make_env,
     pex_check_output,
     run_simple_pex,
     run_simple_pex_test,
@@ -251,16 +252,19 @@ def test_pex_script(project_name, zip_safe):
     # type: (str, bool) -> None
     with make_bdist(name=project_name, zip_safe=zip_safe) as bdist:
         env_copy = os.environ.copy()
-        env_copy["PEX_SCRIPT"] = "hello_world"
+        hello_world_script = "hello_world.py" if WINDOWS else "hello_world"
+        env_copy["PEX_SCRIPT"] = hello_world_script
         so, rc = run_simple_pex_test("", env=env_copy)
         assert rc == 1, so.decode("utf-8")
-        assert b"Could not find script 'hello_world'" in so
+        assert "Could not find script '{hello_world_script}'".format(
+            hello_world_script=hello_world_script
+        ) in so.decode("utf-8")
 
         so, rc = run_simple_pex_test("", env=env_copy, dists=[bdist])
         assert rc == 0, so.decode("utf-8")
         assert b"hello world" in so
 
-        env_copy["PEX_SCRIPT"] = "shell_script"
+        env_copy["PEX_SCRIPT"] = "shell_script.bat" if WINDOWS else "shell_script"
         so, rc = run_simple_pex_test("", env=env_copy, dists=[bdist])
         assert rc == 0, so.decode("utf-8")
         assert b"hello world from shell script" in so
@@ -286,20 +290,24 @@ def test_pex_run_extra_sys_path():
     with named_temporary_file() as fake_stdout:
         with temporary_dir() as temp_dir:
             pex = write_simple_pex(
-                temp_dir, 'import sys; sys.stdout.write(":".join(sys.path)); sys.exit(0)'
+                temp_dir, "import os, sys; sys.stdout.write(os.pathsep.join(sys.path)); sys.exit(0)"
             )
+            extra_syspath_entry1 = os.path.join("extra", "syspath", "entry1")
+            extra_syspath_entry2 = os.path.join("extra", "syspath", "entry2")
             rc = PEX(pex.path()).run(
                 stdin=None,
                 stdout=fake_stdout,
                 stderr=None,
-                env={"PEX_EXTRA_SYS_PATH": "extra/syspath/entry1:extra/syspath/entry2"},
+                env=make_env(
+                    PEX_EXTRA_SYS_PATH=os.pathsep.join((extra_syspath_entry1, extra_syspath_entry2))
+                ),
             )
             assert rc == 0
 
             fake_stdout.seek(0)
-            syspath = fake_stdout.read().split(b":")
-            assert b"extra/syspath/entry1" in syspath
-            assert b"extra/syspath/entry2" in syspath
+            syspath = fake_stdout.read().decode("utf-8").split(os.pathsep)
+            assert extra_syspath_entry1 in syspath
+            assert extra_syspath_entry2 in syspath
 
 
 @attr.s(frozen=True)
@@ -315,7 +323,7 @@ class PythonpathIsolationTest(object):
 
     def assert_isolation(self, inherit_path, expected_output):
         # type: (Union[str, bool], str) -> None
-        env = dict(PYTHONPATH=self.pythonpath)
+        env = make_env(PYTHONPATH=self.pythonpath)
         with temporary_dir() as temp_dir:
             pex_builder = write_simple_pex(
                 temp_dir,
@@ -473,7 +481,7 @@ def test_pex_executable():
 
             app_pex = os.path.join(os.path.join(temp_dir, "out_pex_dir"), "app.pex")
             pex_builder.build(app_pex)
-            std_out, rc = run_simple_pex(app_pex, env={"PEX_ROOT": os.path.join(temp_dir, ".pex")})
+            std_out, rc = run_simple_pex(app_pex, make_env(PEX_ROOT=os.path.join(temp_dir, ".pex")))
             assert rc == 0
             assert std_out.decode("utf-8") == "hello world from start.sh!\n"
 
@@ -506,7 +514,9 @@ def test_pex_paths():
                 ],
             )
 
-            rc = PEX(pex2.path()).run(stdin=None, stdout=fake_stdout, env={"PEX_PATH": pex1_path})
+            rc = PEX(pex2.path()).run(
+                stdin=None, stdout=fake_stdout, env=make_env(PEX_PATH=pex1_path)
+            )
             assert rc == 0
 
             fake_stdout.seek(0)
@@ -596,7 +606,7 @@ def test_execute_interpreter_dashc_program():
         stdout, stderr = process.communicate()
 
         assert 0 == process.returncode
-        assert b"-c one\n" == stdout
+        assert b"-c one" == stdout.strip()
         assert b"" == stderr
 
 
@@ -617,7 +627,7 @@ def test_execute_interpreter_dashc_program_with_python_options():
         stdout, stderr = process.communicate()
 
         assert b"" == stderr
-        assert b"-c one\n" == stdout
+        assert b"-c one" == stdout.strip()
         assert 0 == process.returncode
 
 
@@ -650,9 +660,10 @@ def test_execute_interpreter_dashm_module():
         stdout, stderr = process.communicate()
 
         assert 0 == process.returncode
-        assert "{} one two\n".format(
-            os.path.realpath(os.path.join(pex_chroot, "foo/bar.py"))
-        ) == stdout.decode("utf-8")
+        assert (
+            "{} one two".format(os.path.realpath(os.path.join(pex_chroot, "foo/bar.py")))
+            == stdout.decode("utf-8").strip()
+        )
         assert b"" == stderr
 
 
@@ -690,9 +701,10 @@ def test_execute_interpreter_dashm_module_with_python_options():
         stdout, stderr = process.communicate()
 
         assert b"" == stderr
-        assert "{} one two\n".format(
-            os.path.realpath(os.path.join(pex_chroot, "foo/bar.py"))
-        ) == stdout.decode("utf-8")
+        assert (
+            "{} one two".format(os.path.realpath(os.path.join(pex_chroot, "foo/bar.py")))
+            == stdout.decode("utf-8").strip()
+        )
         assert 0 == process.returncode
 
 
@@ -711,7 +723,7 @@ def test_execute_interpreter_stdin_program():
         stdout, stderr = process.communicate(input=b'import sys; print(" ".join(sys.argv))')
 
         assert 0 == process.returncode
-        assert b"- one two\n" == stdout
+        assert b"- one two" == stdout.strip()
         assert b"" == stderr
 
 
@@ -736,7 +748,7 @@ def test_execute_interpreter_stdin_program_with_python_options():
         )
 
         assert b"" == stderr
-        assert b"- one two\n" == stdout
+        assert b"- one two" == stdout.strip()
         assert 0 == process.returncode
 
 
@@ -757,7 +769,7 @@ def test_execute_interpreter_file_program():
             stdout, stderr = process.communicate()
 
             assert 0 == process.returncode
-            assert "{} one two\n".format(fp.name).encode("utf-8") == stdout
+            assert "{} one two".format(fp.name).encode("utf-8") == stdout.strip()
             assert b"" == stderr
 
 
@@ -826,7 +838,7 @@ def test_pex_run_conflicting_custom_setuptools_useable():
             ),
             dists=dists,
         )
-        rc = PEX(pex.path()).run(env={"PEX_VERBOSE": "9"})
+        rc = PEX(pex.path()).run(env=make_env(PEX_VERBOSE=9))
         assert rc == 0
 
 

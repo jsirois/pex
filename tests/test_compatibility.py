@@ -1,9 +1,12 @@
 # Copyright 2015 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+import os.path
+
 import pytest
 
 from pex.compatibility import PY3, commonpath, indent, to_bytes, to_unicode
+from pex.os import WINDOWS
 
 unicode_string = (str,) if PY3 else (unicode,)  # type: ignore[name-defined]
 
@@ -56,13 +59,20 @@ def test_commonpath_invalid():
         commonpath(["a", "/a"])
 
 
+def absolute_path(*components):
+    # type: (*str) -> str
+    if WINDOWS:
+        return os.path.join("C:", "\\", *components)
+    return os.path.join("/", *components)
+
+
 def test_commonpath_single():
     # type: () -> None
 
     assert "" == commonpath([""])
-    assert "/" == commonpath(["/"])
+    assert absolute_path() == commonpath([absolute_path()])
     assert "a" == commonpath(["a"])
-    assert "/a" == commonpath(["/a"])
+    assert absolute_path("a") == commonpath([absolute_path("a")])
 
 
 def test_commonpath_common():
@@ -74,11 +84,11 @@ def test_commonpath_common():
     assert "a" == commonpath(["a/", "a/b"])
     assert "a" == commonpath(["a/c", "a/b"])
 
-    assert "/a" == commonpath(["/a", "/a"])
-    assert "/a" == commonpath(["/a", "/a/"])
-    assert "/a" == commonpath(["/a", "/a/b"])
-    assert "/a" == commonpath(["/a/", "/a/b"])
-    assert "/a" == commonpath(["/a/c", "/a/b"])
+    assert absolute_path("a") == commonpath([absolute_path("a"), absolute_path("a")])
+    assert absolute_path("a") == commonpath([absolute_path("a"), absolute_path("a", "")])
+    assert absolute_path("a") == commonpath([absolute_path("a"), absolute_path("a", "b")])
+    assert absolute_path("a") == commonpath([absolute_path("a", ""), absolute_path("a", "b")])
+    assert absolute_path("a") == commonpath([absolute_path("a", "c"), absolute_path("a", "b")])
 
     assert "a" == commonpath(["./a", "./a"])
     assert "a" == commonpath(["./a", "./a/"])
@@ -86,14 +96,14 @@ def test_commonpath_common():
     assert "a" == commonpath(["./a/", "./a/b"])
     assert "a" == commonpath(["./a/c", "./a/b"])
 
-    assert "../a" == commonpath(["../a", "../a"])
-    assert "../a" == commonpath(["../a", "../a/"])
-    assert "../a" == commonpath(["../a", "../a/b"])
-    assert "../a" == commonpath(["../a/", "../a/b"])
-    assert "../a" == commonpath(["../a/c", "../a/b"])
+    assert os.path.join("..", "a") == commonpath(["../a", "../a"])
+    assert os.path.join("..", "a") == commonpath(["../a", "../a/"])
+    assert os.path.join("..", "a") == commonpath(["../a", "../a/b"])
+    assert os.path.join("..", "a") == commonpath(["../a/", "../a/b"])
+    assert os.path.join("..", "a") == commonpath(["../a/c", "../a/b"])
 
-    assert "a/b" == commonpath(["./a/./b", "./a/b"])
-    assert "a/../b" == commonpath(["./a/.././b", "a/../b/c"])
+    assert os.path.join("a", "b") == commonpath(["./a/./b", "./a/b"])
+    assert os.path.join("a", "..", "b") == commonpath(["./a/.././b", "a/../b/c"])
 
 
 def test_commonpath_none():

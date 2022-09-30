@@ -3,6 +3,7 @@
 
 import os
 
+from pex.os import HOME_ENV_VAR
 from pex.testing import make_env, run_pex_command
 from pex.typing import TYPE_CHECKING
 
@@ -26,7 +27,7 @@ def test_mount_respects_env(
     pex_file = os.path.join(str(tmpdir), "pex.pex")
 
     result = run_pex_command(
-        args=[pex_project_dir, "-o", pex_file], env=make_env(HOME=home), quiet=True
+        args=[pex_project_dir, "-o", pex_file], env=make_env((HOME_ENV_VAR, home)), quiet=True
     )
     result.assert_success()
 
@@ -35,7 +36,7 @@ def test_mount_respects_env(
     pex_root_override = os.path.join(str(tmpdir), "pex_root_override")
     result = run_pex_command(
         args=[pex_project_dir, "-o", pex_file],
-        env=make_env(HOME=home, PEX_ROOT=pex_root_override),
+        env=make_env((HOME_ENV_VAR, home), PEX_ROOT=pex_root_override),
         quiet=True,
     )
     result.assert_success()

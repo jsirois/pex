@@ -19,7 +19,9 @@ from pex.executor import Executor
 from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.jobs import Job
+from pex.os import MAC
 from pex.pyenv import Pyenv
+from pex.sysconfig import script_name
 from pex.testing import (
     PY38,
     PY39,
@@ -127,7 +129,8 @@ class TestPythonInterpreter(object):
 
         matches = PythonInterpreter._matches_binary_name
         for name in valid_binary_names:
-            assert matches(name), "Expected {} to be valid binary name".format(name)
+            python_exe = script_name(name)
+            assert matches(python_exe), "Expected {} to be valid binary name".format(python_exe)
 
     def test_iter_interpreter_some(self, test_interpreter1, test_interpreter2):
         # type: (str, str) -> None
@@ -153,7 +156,7 @@ class TestPythonInterpreter(object):
     def invalid_interpreter(self):
         # type: () -> Iterator[str]
         with temporary_dir() as bin_dir:
-            invalid_interpreter = os.path.join(bin_dir, "python")
+            invalid_interpreter = os.path.join(bin_dir, script_name("python"))
             touch(invalid_interpreter)
             yield invalid_interpreter
 

@@ -340,49 +340,6 @@ def chmod_plus_w(path):
     os.chmod(path, path_mode)
 
 
-def is_exe(path):
-    # type: (str) -> bool
-    """Determines if the given path is a file executable by the current user.
-
-    :param path: The path to check.
-    :return: `True if the given path is a file executable by the current user.
-    """
-    return os.path.isfile(path) and os.access(path, os.R_OK | os.X_OK)
-
-
-def is_script(
-    path,  # type: str
-    pattern=None,  # type: Optional[str]
-    check_executable=True,  # type: bool
-):
-    # type: (...) -> bool
-    """Determines if the given path is a script.
-
-    A script is a file that starts with a shebang (#!...) line.
-
-    :param path: The path to check.
-    :param pattern: An optional pattern to match against the shebang (excluding the leading #!).
-    :param check_executable: Check that the script is executable by the current user.
-    :return: True if the given path is a script.
-    """
-    if check_executable and not is_exe(path):
-        return False
-    with open(path, "rb") as fp:
-        if b"#!" != fp.read(2):
-            return False
-        if not pattern:
-            return True
-        return bool(re.match(pattern, fp.readline().decode("utf-8")))
-
-
-def is_python_script(
-    path,  # type: str
-    check_executable=True,  # type: bool
-):
-    # type: (...) -> bool
-    return is_script(path, pattern=r"(?i)^.*(?:python|pypy)", check_executable=check_executable)
-
-
 def can_write_dir(path):
     # type: (str) -> bool
     """Determines if the directory at path can be written to by the current process.

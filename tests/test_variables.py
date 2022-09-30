@@ -8,7 +8,7 @@ import pytest
 
 from pex import pex_warnings
 from pex.common import temporary_dir
-from pex.compatibility import PY2
+from pex.compatibility import PY2, WINDOWS
 from pex.pex_warnings import PEXWarning
 from pex.testing import environment_as
 from pex.typing import TYPE_CHECKING
@@ -158,6 +158,7 @@ def test_pex_vars_defaults_stripped():
     assert Variables.PEX_VERBOSE.strip_default(v) is None
 
 
+@pytest.mark.skipif(WINDOWS, reason="Directory ACL checks are not implemented for Windows: XXX")
 def test_pex_root_unwriteable():
     # type: () -> None
     with temporary_dir() as td:
@@ -190,12 +191,15 @@ def test_pex_vars_value_or(tmpdir):
     pex_root = str(tmpdir)
     assert pex_root == Variables.PEX_ROOT.value_or(v, pex_root)
 
-    unwriteable_pex_root = os.path.join(pex_root, "unwriteable")
-    os.mkdir(unwriteable_pex_root, 0o444)
-    assert unwriteable_pex_root != Variables.PEX_ROOT.value_or(v, unwriteable_pex_root), (
-        "Expected the fallback to be validated, and in the case of PEX_ROOT, replaced with a "
-        "writeable tmp dir"
-    )
+    # You cannot mark a directory read-only on Windows with just the perm bits, it requires
+    # modifying the ACL which Pex does not support: XXX
+    if not WINDOWS:
+        unwriteable_pex_root = os.path.join(pex_root, "unwriteable")
+        os.mkdir(unwriteable_pex_root, 0o444)
+        assert unwriteable_pex_root != Variables.PEX_ROOT.value_or(v, unwriteable_pex_root), (
+            "Expected the fallback to be validated, and in the case of PEX_ROOT, replaced with a "
+            "writeable tmp dir"
+        )
 
 
 def test_patch():

@@ -6,11 +6,11 @@ from __future__ import absolute_import
 import ast
 import os
 
-from pex.common import is_python_script
 from pex.dist_metadata import Distribution, EntryPoint
 from pex.orderedset import OrderedSet
 from pex.pep_376 import InstalledWheel
 from pex.pep_503 import ProjectName
+from pex.script import is_python_script
 from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.typing import TYPE_CHECKING, cast
 

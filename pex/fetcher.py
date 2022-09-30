@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import
 
+import os.path
 import ssl
 import time
 from contextlib import closing, contextmanager
@@ -37,7 +38,7 @@ class URLFetcher(object):
         network_configuration=None,  # type: Optional[NetworkConfiguration]
         handle_file_urls=False,  # type: bool
         password_entries=(),  # type: Iterable[PasswordEntry]
-        netrc_file="~/.netrc",  # type: Optional[str]
+        netrc_file=os.path.join("~", ".netrc"),  # type: Optional[str]
     ):
         # type: (...) -> None
         network_configuration = network_configuration or NetworkConfiguration()

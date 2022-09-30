@@ -105,7 +105,7 @@ class PasswordEntry(object):
 @attr.s(frozen=True)
 class PasswordDatabase(object):
     @classmethod
-    def from_netrc(cls, netrc_file="~/.netrc"):
+    def from_netrc(cls, netrc_file=os.path.join("~", ".netrc")):
         # type: (Optional[str]) -> PasswordDatabase
         if not netrc_file:
             return cls()

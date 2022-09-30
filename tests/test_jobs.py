@@ -96,7 +96,7 @@ def test_spawn_and_then(tmpdir):
 def test_spawn_stdout():
     # type: () -> None
     assert (
-        "Jane\n"
+        "Jane"
         == SpawnedJob.stdout(
             job=spawn_python_job(
                 args=["-c", "import sys; print(sys.stdin.read())"],
@@ -105,7 +105,9 @@ def test_spawn_stdout():
             ),
             result_func=lambda stdout: stdout.decode("utf-8"),
             input=b"Jane",
-        ).await_result()
+        )
+        .await_result()
+        .strip()
     )
 
     spawned_job = SpawnedJob.stdout(create_error_job(137), lambda output: 42)

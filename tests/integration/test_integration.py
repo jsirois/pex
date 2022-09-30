@@ -23,7 +23,7 @@ from pex.fetcher import URLFetcher
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.network_configuration import NetworkConfiguration
-from pex.os import WINDOWS
+from pex.os import HOME_ENV_VAR, WINDOWS
 from pex.pex_info import PexInfo
 from pex.requirements import LogicalLine, PyPIRequirement, parse_requirement_file
 from pex.testing import (
@@ -94,41 +94,45 @@ def assert_empty_home_dir(home_dir):
     )
 
 
-def test_pex_root_build():
-    # type: () -> None
+def test_pex_root_build(pex_project_dir):
+    # type: (str) -> None
     with temporary_dir() as td, temporary_dir() as home:
         buildtime_pex_root = os.path.join(td, "buildtime_pex_root")
         output_dir = os.path.join(td, "output_dir")
 
         output_path = os.path.join(output_dir, "pex.pex")
         args = [
-            "pex",
+            pex_project_dir,
             "-o",
             output_path,
             "--not-zip-safe",
             "--pex-root={}".format(buildtime_pex_root),
         ]
-        results = run_pex_command(args=args, env=make_env(HOME=home, PEX_INTERPRETER="1"))
+        results = run_pex_command(
+            args=args, env=make_env((HOME_ENV_VAR, home), PEX_INTERPRETER="1")
+        )
         results.assert_success()
         assert ["pex.pex"] == os.listdir(output_dir), "Expected built pex file."
         assert_empty_home_dir(home_dir=home)
         assert_installed_wheels(label="buildtime", pex_root=buildtime_pex_root)
 
 
-def test_pex_root_run():
-    # type: () -> None
+def test_pex_root_run(pex_project_dir):
+    # type: (str) -> None
     python38 = ensure_python_interpreter(PY38)
     python310 = ensure_python_interpreter(PY310)
 
     with temporary_dir() as td, temporary_dir() as runtime_pex_root, temporary_dir() as home:
-        pex_env = make_env(HOME=home, PEX_PYTHON_PATH=os.pathsep.join((python38, python310)))
+        pex_env = make_env(
+            (HOME_ENV_VAR, home), PEX_PYTHON_PATH=os.pathsep.join((python38, python310))
+        )
 
         buildtime_pex_root = os.path.join(td, "buildtime_pex_root")
         output_dir = os.path.join(td, "output_dir")
 
         pex_pex = os.path.join(output_dir, "pex.pex")
         args = [
-            "pex",
+            pex_project_dir,
             "-o",
             pex_pex,
             "-c",
@@ -172,7 +176,9 @@ def test_cache_disable():
             "--disable-cache",
             "--pex-root={}".format(td),
         ]
-        results = run_pex_command(args=args, env=make_env(HOME=tmp_home, PEX_INTERPRETER="1"))
+        results = run_pex_command(
+            args=args, env=make_env((HOME_ENV_VAR, tmp_home), PEX_INTERPRETER="1")
+        )
         results.assert_success()
         assert ["pex.pex"] == os.listdir(output_dir), "Expected built pex file."
         assert_empty_home_dir(tmp_home)
@@ -235,7 +241,7 @@ def test_pex_python_symlink():
             pexrc.write("PEX_PYTHON=%s" % symlink_path)
 
         body = "print('Hello')"
-        _, rc = run_simple_pex_test(body, coverage=True, env=make_env(HOME=td))
+        _, rc = run_simple_pex_test(body, coverage=True, env=make_env((HOME_ENV_VAR, td)))
         assert rc == 0
 
 

@@ -12,6 +12,7 @@ import pytest
 from pex.common import open_zip, safe_open, temporary_dir, touch
 from pex.compatibility import commonpath
 from pex.layout import Layout
+from pex.os import WINDOWS
 from pex.pex import PEX
 from pex.pex_builder import CopyMode, PEXBuilder
 from pex.testing import (
@@ -258,7 +259,7 @@ def test_pex_builder_script_from_pex_path(tmpdir):
     pb.set_script("my_app")
     pb.build(pex_file)
 
-    assert "hello world!\n" == pex_check_output(args=[pex_file]).decode("utf-8")
+    assert "hello world!" == pex_check_output(args=[pex_file]).decode("utf-8").strip()
 
 
 def test_pex_builder_setuptools_script(tmpdir):
@@ -270,10 +271,12 @@ def test_pex_builder_setuptools_script(tmpdir):
     ) as dist:
         pb = PEXBuilder()
         pb.add_dist_location(dist.location)
-        pb.set_script("shell_script")
+        pb.set_script("shell_script.bat" if WINDOWS else "shell_script")
         pb.build(pex_file)
 
-    assert "hello world from shell script\n" == pex_check_output(args=[pex_file]).decode("utf-8")
+    assert (
+        "hello world from shell script" == pex_check_output(args=[pex_file]).decode("utf-8").strip()
+    )
 
 
 def test_pex_builder_packed(tmpdir):
@@ -288,12 +291,13 @@ def test_pex_builder_packed(tmpdir):
         pb = PEXBuilder(copy_mode=CopyMode.SYMLINK)
         pb.add_source(source_file, "a.file")
         pb.add_dist_location(dist.location)
-        pb.set_script("shell_script")
+        pb.set_script("shell_script.bat" if WINDOWS else "shell_script")
         pb.build(pex_app, layout=Layout.PACKED)
 
-    assert "hello world from shell script\n" == pex_check_output(
-        args=[os.path.join(pex_app, "__main__.py")]
-    ).decode("utf-8")
+    assert (
+        "hello world from shell script"
+        == pex_check_output(args=[os.path.join(pex_app, "__main__.py")]).decode("utf-8").strip()
+    )
 
     spread_dist_bootstrap = os.path.join(pex_app, pb.info.bootstrap)
     assert zipfile.is_zipfile(spread_dist_bootstrap)
@@ -356,7 +360,7 @@ def test_pex_builder_exclude_bootstrap_testing(
             )
     elif Layout.PACKED == layout:
         with open_zip(bootstrap_location) as zf:
-            bootstrap_files.update(zf.namelist())
+            bootstrap_files.update(os.path.normpath(p) for p in zf.namelist())
     else:
         bootstrap_files.update(
             os.path.relpath(os.path.join(root, f), bootstrap_location)
@@ -364,7 +368,11 @@ def test_pex_builder_exclude_bootstrap_testing(
             for f in files
         )
 
-    assert {"pex/pex_bootstrapper.py", "pex/pex_info.py", "pex/pex.py"}.issubset(
+    assert {
+        os.path.join("pex", "pex_bootstrapper.py"),
+        os.path.join("pex", "pex_info.py"),
+        os.path.join("pex", "pex.py"),
+    }.issubset(
         bootstrap_files
     ), "Expected the `.bootstrap` to contain at least some of the key Pex runtime modules."
     assert not [

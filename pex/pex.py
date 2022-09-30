@@ -833,7 +833,9 @@ class PEX(object):  # noqa: T000
         with named_temporary_file() as fp:
             fp.write(import_statement.encode("utf-8"))
             fp.close()
-            retcode = self.run([fp.name], env={"PEX_INTERPRETER": "1"})
+            env = os.environ.copy()
+            env["PEX_INTERPRETER"] = "1"
+            retcode = self.run([fp.name], env=env)
             if retcode != 0:
                 raise self.InvalidEntryPoint(
                     "Invalid entry point: `{}`\n"

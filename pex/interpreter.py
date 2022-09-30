@@ -16,20 +16,20 @@ import sysconfig
 from collections import OrderedDict
 
 from pex import third_party
-from pex.common import is_exe, safe_mkdtemp, safe_rmtree
+from pex.common import safe_mkdtemp, safe_rmtree
 from pex.compatibility import string
 from pex.dist_metadata import DistMetadata, Distribution, Requirement, RequirementParseError
 from pex.executor import Executor
 from pex.jobs import Job, Retain, SpawnedJob, execute_parallel
 from pex.orderedset import OrderedSet
-from pex.os import WINDOWS
+from pex.os import WINDOWS, is_exe
 from pex.pep_425 import CompatibilityTags
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pep_508 import MarkerEnvironment
 from pex.platforms import Platform
 from pex.pyenv import Pyenv
-from pex.sysconfig import SCRIPT_DIR, script_name
+from pex.sysconfig import EXE_EXTENSION, SCRIPT_DIR, script_name
 from pex.third_party.packaging import tags
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast, overload
@@ -417,7 +417,7 @@ class PythonIdentity(object):
 class PythonInterpreter(object):
     _REGEXEN = (
         # NB: OSX ships python binaries named Python with a capital-P; so we allow for this.
-        re.compile(r"^Python$"),
+        re.compile(r"^Python{extension}$".format(extension=re.escape(EXE_EXTENSION))),
         re.compile(
             r"""
             ^
@@ -437,8 +437,11 @@ class PythonInterpreter(object):
                     [a-z]?
                 )?
             )?
+            {extension}
             $
-            """,
+            """.format(
+                extension=re.escape(EXE_EXTENSION)
+            ),
             flags=re.VERBOSE,
         ),
     )

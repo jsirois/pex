@@ -264,7 +264,6 @@ def find_compatible_interpreter(interpreter_test=None):
             )
 
     current_interpreter = PythonInterpreter.get()
-    target = current_interpreter  # type: Optional[PythonInterpreter]
     with TRACER.timed("Selecting runtime interpreter", V=3):
         if ENV.PEX_PYTHON and not ENV.PEX_PYTHON_PATH:
             TRACER.log(

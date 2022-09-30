@@ -7,8 +7,7 @@ import os
 import re
 import subprocess
 
-from pex.common import is_exe
-from pex.os import WINDOWS
+from pex.os import WINDOWS, is_exe
 from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING

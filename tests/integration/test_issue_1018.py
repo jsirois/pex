@@ -66,7 +66,7 @@ def test_execute_module_alter_sys(
                 """
             )
         )
-    expected_output = b"3\n"
+    expected_output = "3{eol}".format(eol=os.linesep).encode("utf-8")
 
     # There are 18 ways we can invoke the module above using Pex corresponding to the 3D matrix with
     # axes: execution mode x layout x {entrypoint-function, entrypoint-module, ad-hoc (-m) module}.

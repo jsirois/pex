@@ -92,7 +92,6 @@ def __maybe_install_pex__(pex, pex_root, pex_hash, bootstrap_hash):
 
 
 def __maybe_run_venv__(pex, pex_root, pex_path):
-  from pex.common import is_exe
   from pex.sysconfig import SCRIPT_DIR, script_name
   from pex.tracer import TRACER
   from pex.variables import venv_dir
@@ -104,11 +103,11 @@ def __maybe_run_venv__(pex, pex_root, pex_path):
     has_interpreter_constraints={has_interpreter_constraints!r},
     pex_path=pex_path,
   )
-  venv_pex = os.path.join(venv_dir, 'pex')
-  if not __execute__ or not is_exe(venv_pex):
+  if not __execute__ or not os.path.isdir(venv_dir):
     # Code in bootstrap_pex will (re)create the venv after selecting the correct interpreter. 
     return venv_dir
 
+  venv_pex = os.path.join(venv_dir, 'pex')
   TRACER.log('Executing venv PEX for {{}} at {{}}'.format(pex, venv_pex))
   venv_python = os.path.join(venv_dir, SCRIPT_DIR, script_name('python'))
   __re_exec__(venv_python, '-sE', venv_pex)
