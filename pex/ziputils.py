@@ -1,13 +1,12 @@
 # Copyright 2022 Pants project contributors (see CONTRIBUTORS.md).
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import
 
 import io
 import os
 import shutil
 import struct
-import sys
 from typing import Tuple
 
 from pex.typing import TYPE_CHECKING
