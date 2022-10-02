@@ -87,7 +87,7 @@ def get_entry_point_from_console_script(
     # multi-platform pex.
     def get_entrypoint(dist):
         # type: (Distribution) -> Optional[EntryPoint]
-        return dist.get_entry_map().get("console_scripts", {}).get(script)
+        return dist.get_console_scripts().get(script)
 
     entries = {}  # type: Dict[ProjectName, DistributionEntryPoint]
     for dist in dists:

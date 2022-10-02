@@ -52,8 +52,8 @@ def test_is_script(tmpdir):
         fp.write(b"#!/mystery\n")
         shutil.copyfileobj(zfp, fp)
     assert is_script(exe)
-    assert is_script(exe, pattern=r"^/mystery")
-    assert not is_script(exe, pattern=r"^python")
+    assert is_script(exe, pattern=br"^/mystery")
+    assert not is_script(exe, pattern=br"^python")
 
     os.chmod(exe, 0o665)
     assert is_script(exe, check_executable=False)

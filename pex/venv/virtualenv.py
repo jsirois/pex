@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import
 
+import itertools
 import logging
 import os
 import pkgutil
@@ -22,6 +23,7 @@ from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
 from pex.os import WINDOWS, is_exe
+from pex.script import is_python_script
 from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
@@ -31,7 +33,6 @@ from pex.ziputils import Zip
 
 if TYPE_CHECKING:
     from typing import Iterator, Optional, Tuple, Union
-
 
 logger = logging.getLogger(__name__)
 
@@ -44,40 +45,6 @@ def _iter_files(directory):
     # type: (str) -> Iterator[str]
     for entry in os.listdir(directory):
         yield os.path.join(directory, entry)
-
-
-def _is_python_script(executable):
-    # type: (str) -> bool
-    with open(executable, "rb") as fp:
-        if fp.read(2) != b"#!":
-            return False
-        interpreter = fp.readline()
-        return bool(
-            # Support the `#!python` shebang that wheel installers should recognize as a special
-            # form to convert to a localized shebang upon install.
-            # See: https://www.python.org/dev/peps/pep-0427/#recommended-installer-features
-            interpreter == b"python\n"
-            or re.search(
-                br"""
-                # The aim is to admit the common shebang forms:
-                # + /usr/bin/env <python bin name>
-                # + /absolute/path/to/<python bin name>
-                \W
-
-                # Python executable names Pex supports (see PythonIdentity).
-                (
-                      python
-                    | pypy
-                )
-                # Optional Python version
-                (\d+(\.\d+)*)?
-
-                ([^.a-zA-Z0-9]|$)
-                """,
-                interpreter,
-                re.VERBOSE,
-            )
-        )
 
 
 class InvalidVirtualenvError(Exception):
@@ -337,7 +304,7 @@ class Virtualenv(object):
         scripts = [
             path
             for path in self._base_bin
-            if _is_python_script(path) or re.search(r"^[Aa]ctivate", os.path.basename(path))
+            if is_python_script(path) or re.search(r"^[Aa]ctivate", os.path.basename(path))
         ]
         if scripts:
             rewritten_files = set()
@@ -363,9 +330,23 @@ class Virtualenv(object):
             shebang.append(python_args)
         shebang_bytes = "#!{shebang}\n".format(shebang=" ".join(shebang)).encode("utf-8")
 
-        python_scripts = [
-            executable for executable in self.iter_executables() if _is_python_script(executable)
-        ]
+        python_scripts = OrderedSet(
+            executable for executable in self.iter_executables() if is_python_script(executable)
+        )
+
+        console_scripts = set(
+            itertools.chain.from_iterable(
+                distribution.get_console_scripts() for distribution in self.iter_distributions()
+            )
+        )
+        if WINDOWS:
+            for python_script in list(python_scripts):
+                name, ext = os.path.splitext(os.path.basename(python_script))
+                if ext == ".exe" and name in console_scripts:
+                    self.rewrite_windows_script(python_script, shebang_bytes)
+                    python_scripts.discard(python_script)
+                    yield python_script
+
         if python_scripts:
             with closing(FileInput(files=sorted(python_scripts), inplace=True, mode="rb")) as fi:
                 # N.B.: `FileInput` is strange, but useful: the context manager above monkey-patches
@@ -379,14 +360,6 @@ class Virtualenv(object):
                     else:
                         # N.B.: These lines include the newline already.
                         buffer.write(cast(bytes, line))
-        if WINDOWS:
-            for executable in self.iter_executables():
-                if not executable.endswith(".exe"):
-                    continue
-                if executable in self._base_bin:
-                    continue
-                self.rewrite_windows_script(executable, shebang_bytes)
-                yield executable
 
     def install_pip(self):
         # type: () -> str

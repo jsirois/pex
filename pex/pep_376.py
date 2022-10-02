@@ -584,6 +584,11 @@ class Record(object):
         for script_name in os.listdir(bin_dir):
             script_path = os.path.join(bin_dir, script_name)
             if is_python_script(script_path):
+                if WINDOWS:
+                    name, ext = os.path.splitext(script_name)
+                    if ext == ".exe" and name in console_scripts:
+                        exes.append(script_path)
+                        continue
                 scripts[script_path] = None
             elif script_name in console_scripts:
                 # When a wheel is installed by Pip and that wheel contains console_scripts, they are
@@ -614,10 +619,6 @@ class Record(object):
                 # pex/vendor/_vendored/pip/pip/_vendor/distlib/scripts.py on line 41:
                 # https://github.com/pantsbuild/pex/blob/196b4cd5b8dd4b4af2586460530e9a777262be7d/pex/vendor/_vendored/pip/pip/_vendor/distlib/scripts.py#L41
                 scripts[script_path] = b"# -*- coding: utf-8 -*-"
-            elif WINDOWS:
-                name, ext = os.path.splitext(script_name)
-                if ext == ".exe" and name in console_scripts:
-                    exes.append(script_path)
 
         shebang_bytes = b"#!python\n"
         for exe in exes:

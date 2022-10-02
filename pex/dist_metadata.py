@@ -678,6 +678,10 @@ class Distribution(object):
             return defaultdict(dict)
         return self.parse_entry_map(os.path.join(self.location, entry_points_metadata_relpath))
 
+    def get_console_scripts(self):
+        # type: () -> Dict[str, EntryPoint]
+        return self.get_entry_map().get("console_scripts", {})
+
     def __str__(self):
         # type: () -> str
         return "{project_name} {version}".format(
