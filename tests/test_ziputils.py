@@ -17,77 +17,78 @@ from pex.typing import TYPE_CHECKING
 from pex.ziputils import Zip, ZipError
 
 if TYPE_CHECKING:
-    from typing import Any
+    from typing import Any, Iterator
 
 
-def test_zip64_fail_fast(tmpdir):
-    zip_file = os.path.join(str(tmpdir), "zip_file")
-    with open_zip(zip_file, "w") as zip_fp:
-        for x in range(100000):
-            zip_fp.writestr("{x}.txt".format(x=x), bytes(x))
-
-    with pytest.raises(
-        ZipError,
-        match=re.escape(
-            "The zip at {path} requires Zip64 support.{eol}"
-            "The disk_cd_record_count field of the EndOfCentralDirectoryRecord record has value "
-            "65535 indicating Zip64 support is required, but Zip64 support is not implemented.{eol}"
-            "Please file an issue at https://github.com/pantsbuild/pex/issues/new that includes "
-            "this full backtrace if you need this support.".format(path=zip_file, eol=os.linesep)
-        ),
-    ):
-        Zip.load(zip_file)
+def iter_zip64_names():
+    # type: () -> Iterator[str]
+    for x in range(0xFFFF):
+        yield str(x)
 
 
 def assert_zipapp(
     path,  # type: str
     expected_comment=b"",  # type: bytes
+    expected_zip64=False,  # type: bool
 ):
     # type: (...) -> None
 
     with open_zip(path) as zip_fp:
-        assert ["__main__.py", "data.py", "data"] == zip_fp.namelist()
+        expected_names = []
+        if expected_zip64:
+            expected_names.extend(iter_zip64_names())
+        expected_names.extend(["__main__.py", "data.py", "data"])
+        assert expected_names == zip_fp.namelist()
         assert expected_comment == zip_fp.comment
 
-    # Older Pythons cannot execute zipapps with comments. The C runtime has a separate zip
-    # implementation from the zipfile module, and it chokes.
-    # See the fix here in 3.8.0 alpha1: https://github.com/python/cpython/issues/50200
-    if not expected_comment or PY_VER >= (3, 8):
+    # Current Pythons cannot execute Zip64 zipapps and older Pythons cannot execute zipapps (32 bit)
+    # with comments. The C runtime has a separate zip implementation from the zipfile module, and it
+    # chokes. See the fix here in 3.8.0 alpha1: https://github.com/python/cpython/issues/50200
+    if not expected_zip64 and (not expected_comment or PY_VER >= (3, 8)):
         assert b"42" == subprocess.check_output(args=[sys.executable, path]).strip()
 
 
 def create_zipapp(
     tmpdir,  # type: Any
     comment=b"",  # type: bytes
+    zip64=False,  # type: bool
 ):
     # type: (...) -> str
 
     zip_file = os.path.join(str(tmpdir), "zip_file")
     with open_zip(zip_file, "w") as zip_fp:
+        if zip64:
+            for name in iter_zip64_names():
+                zip_fp.writestr(name, b"")
         zip_fp.writestr("__main__.py", b"print('42')")
         zip_fp.writestr("data.py", b"import pkgutil; print(pkgutil.getdata(__name__, 'data'))")
         zip_fp.writestr("data", b"42")
         zip_fp.comment = comment
-    assert_zipapp(zip_file, expected_comment=comment)
+    assert_zipapp(zip_file, expected_comment=comment, expected_zip64=zip64)
     return zip_file
 
 
 @pytest.mark.parametrize(
     "header",
-    [pytest.param(b"", id="no header"), pytest.param(b"One line.\nAnother.\nTrailer", id="header")],
+    [pytest.param(b"", id="no-header"), pytest.param(b"One line.\nAnother.\nTrailer", id="header")],
 )
 @pytest.mark.parametrize(
     "comment",
-    [pytest.param(b"", id="no comment"), pytest.param(b"Phil Katz was here.", id="comment")],
+    [pytest.param(b"", id="no-comment"), pytest.param(b"Phil Katz was here.", id="comment")],
+)
+@pytest.mark.parametrize(
+    "zip64",
+    [pytest.param(False, id="Zip"), pytest.param(True, id="Zip64")],
 )
 def test_header_isolation(
     tmpdir,  # type: Any
     header,  # type: bytes
     comment,  # type: bytes
+    zip64,  # type: bool
 ):
     # type: (...) -> None
 
-    zip_file = create_zipapp(tmpdir, comment=comment)
+    zip_file = create_zipapp(tmpdir, comment=comment, zip64=zip64)
 
     zip_file_with_header = os.path.join(str(tmpdir), "zip_file_with_header")
     with open(zip_file, "rb") as in_fp, open(zip_file_with_header, "wb") as out_fp:
@@ -96,6 +97,7 @@ def test_header_isolation(
 
     zf = Zip.load(zip_file_with_header)
     assert bool(header) == zf.has_header
+    assert zip64 == zf.is_zip64
 
     with BytesIO() as out_fp:
         assert b"" == zf.isolate_header(out_fp)
@@ -106,7 +108,7 @@ def test_header_isolation(
         zf.isolate_zip(out_fp)
 
     assert filecmp.cmp(zip_file, out_zip, shallow=False)
-    assert_zipapp(out_zip, expected_comment=comment)
+    assert_zipapp(out_zip, expected_comment=comment, expected_zip64=zip64)
 
 
 def test_sandwich(tmpdir):
