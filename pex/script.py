@@ -5,7 +5,6 @@ from __future__ import absolute_import, print_function
 
 import os
 import re
-import sys
 import zipfile
 from typing import Optional
 
@@ -33,25 +32,22 @@ def is_script(
     if check_executable and not is_exe(path):
         return False
 
-    if WINDOWS and zipfile.is_zipfile(path):
-        zip_script = Zip.load(path)
-        if not zip_script.has_header:
-            return False
-
-        with open(os.devnull, "wb") as fp:
-            shebang = zip_script.isolate_header(fp, stop_at=_SHEBANG_MAGIC)
-            if not shebang:
-                return False
+    with open(path, "rb") as fp:
+        if _SHEBANG_MAGIC == fp.read(len(_SHEBANG_MAGIC)):
             if not pattern:
                 return True
-            return bool(re.match(pattern, shebang[len(_SHEBANG_MAGIC) :].strip()))
+            return bool(re.match(pattern, fp.readline()))
 
-    with open(path, "rb") as fp:
-        if _SHEBANG_MAGIC != fp.read(len(_SHEBANG_MAGIC)):
-            return False
-        if not pattern:
-            return True
-        return bool(re.match(pattern, fp.readline()))
+    if WINDOWS and zipfile.is_zipfile(path):
+        zip_script = Zip.load(path)
+        with open(os.devnull, "wb") as fp:
+            shebang = zip_script.isolate_header(fp, stop_at=_SHEBANG_MAGIC)
+            if shebang:
+                if not pattern:
+                    return True
+                return bool(re.match(pattern, shebang[len(_SHEBANG_MAGIC) :].strip()))
+
+    return False
 
 
 def is_python_script(
