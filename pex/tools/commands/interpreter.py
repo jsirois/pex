@@ -9,7 +9,11 @@ from argparse import ArgumentParser
 from pex import pex_bootstrapper
 from pex.commands.command import JsonMixin, OutputMixin
 from pex.interpreter import PythonInterpreter
-from pex.interpreter_constraints import UnsatisfiableInterpreterConstraintsError
+from pex.interpreter_constraints import (
+    InterpreterConstraint,
+    InterpreterConstraints,
+    UnsatisfiableInterpreterConstraintsError,
+)
 from pex.pex import PEX
 from pex.pex_bootstrapper import InterpreterTest
 from pex.result import Error, Ok, Result
@@ -66,7 +70,7 @@ class Interpreter(JsonMixin, OutputMixin, PEXCommand):
         pex_info = pex.pex_info()
         for interpreter in pex_bootstrapper.iter_compatible_interpreters(
             path=ENV.PEX_PYTHON_PATH,
-            interpreter_constraints=pex_info.interpreter_constraints,
+            interpreter_constraints=InterpreterConstraints.parse(pex_info.interpreter_constraints),
             interpreter_test=InterpreterTest(entry_point=pex.path(), pex_info=pex_info),
         ):
             yield interpreter
@@ -85,7 +89,7 @@ class Interpreter(JsonMixin, OutputMixin, PEXCommand):
                     if self.options.verbose:
                         interpreter_info = {
                             "path": interpreter.binary,
-                            "requirement": str(interpreter.identity.requirement),
+                            "requirement": str(InterpreterConstraint.exact_version(interpreter)),
                             "platform": str(interpreter.platform),
                         }  # type: Dict[str, Any]
                         if self.options.verbose >= 2:

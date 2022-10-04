@@ -18,7 +18,7 @@ from collections import OrderedDict, namedtuple
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Container, Iterator, Optional, Sequence, Tuple
+    from typing import Container, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 
 def _tracer():
@@ -58,10 +58,15 @@ class _Importable(namedtuple("_Importable", ["module", "is_pkg", "path", "prefix
 
     def expose(self):
         self._exposed = True
-        importlib.import_module(self.module)
         _tracer().log("Exposed {}".format(self), V=3)
 
+    @property
+    def exposed(self):
+        # type: () -> bool
+        return self._exposed
+
     def loader_for(self, fullname):
+        # type: (str) -> Optional[_Loader]
         if fullname.startswith(self.prefix + "."):
             target = fullname[len(self.prefix + ".") :]
         else:
@@ -77,6 +82,8 @@ class _Importable(namedtuple("_Importable", ["module", "is_pkg", "path", "prefix
             )
             vendor_module_name = vendor_path.replace(os.sep, ".")
             return _Loader(fullname, vendor_module_name)
+
+        return None
 
 
 class _DirIterator(namedtuple("_DirIterator", ["rootdir"])):
@@ -190,6 +197,20 @@ class VendorImporter(object):
                         yield importer
 
     @classmethod
+    def installed_vendored(
+        cls,
+        prefix,  # type: str
+        root=None,  # type: Optional[str]
+    ):
+        # type: (...) -> List[VendorImporter]
+        from pex import vendor
+
+        root = cls._abs_root(root)
+        vendored_path_items = [spec.relpath for spec in vendor.iter_vendor_specs()]
+
+        return list(cls._iter_installed_vendor_importers(prefix, root, vendored_path_items))
+
+    @classmethod
     def install_vendored(cls, prefix, root=None, expose=None):
         """Install an importer for all vendored code with the given import prefix.
 
@@ -207,9 +228,7 @@ class VendorImporter(object):
         from pex import vendor
 
         root = cls._abs_root(root)
-        vendored_path_items = [spec.relpath for spec in vendor.iter_vendor_specs()]
-
-        installed = list(cls._iter_installed_vendor_importers(prefix, root, vendored_path_items))
+        installed = cls.installed_vendored(prefix, root=root)
         assert (
             len(installed) <= 1
         ), "Unexpected extra importers installed for vendored code:\n\t{}".format(
@@ -219,6 +238,7 @@ class VendorImporter(object):
             vendor_importer = installed[0]
         else:
             # Install all vendored code for pex internal access to it through the vendor import `prefix`.
+            vendored_path_items = [spec.relpath for spec in vendor.iter_vendor_specs()]
             vendor_importer = cls.install(
                 uninstallable=True, prefix=prefix, path_items=vendored_path_items, root=root
             )
@@ -288,13 +308,28 @@ class VendorImporter(object):
         for vendor_importer in cls._iter_all_installed_vendor_importers():
             vendor_importer.uninstall()
 
-    def __init__(self, root, importables, uninstallable=True):
+    def __init__(
+        self,
+        root,  # type: str
+        importables,  # type: Tuple[_Importable, ...]
+        uninstallable=True,  # type: bool
+    ):
+        # type: (...) -> None
         self._root = root
         self._importables = importables
-
         self._uninstallable = uninstallable
 
-        self._loaders = []
+        self._loaders = []  # type: List[_Loader]
+
+    @property
+    def root(self):
+        # type: () -> str
+        return self._root
+
+    @property
+    def importables(self):
+        # type: () -> Iterable[_Importable]
+        return self._importables
 
     def uninstall(self):
         """Uninstall this importer if possible and un-import any modules imported by it."""
@@ -520,6 +555,14 @@ def install(root=None, expose=None):
     VendorImporter.install_vendored(prefix=import_prefix(), root=root, expose=expose)
 
 
+def exposed(root=None):
+    # type: (Optional[str]) -> Iterator[str]
+    for importer in VendorImporter.installed_vendored(prefix=import_prefix(), root=root):
+        for importable in importer.importables:
+            if importable.exposed:
+                yield os.path.join(importer.root, importable.path)
+
+
 def expose(dists):
     # type: (Sequence[str]) -> Iterator[str]
     """Exposes vendored code in isolated chroots.
@@ -537,4 +580,6 @@ def expose(dists):
 
 
 # Implicitly install an importer for vendored code on the first import of pex.third_party.
-install()
+# N.B.: attrs must be exposed to make use of `cache_hash=True` since that generates and compiles
+# code on the fly that does a bare import attr.
+install(expose=["attrs"])

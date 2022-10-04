@@ -26,7 +26,8 @@ from pex.common import (
 from pex.compatibility import Queue
 from pex.dist_metadata import Distribution
 from pex.environment import PEXEnvironment
-from pex.interpreter import PythonIdentity, PythonInterpreter, spawn_python_job
+from pex.interpreter import PythonInterpreter, spawn_python_job
+from pex.interpreter_constraints import InterpreterConstraint
 from pex.jobs import Retain, SpawnedJob, execute_parallel
 from pex.pex import PEX
 from pex.result import Error, Ok, Result
@@ -343,7 +344,7 @@ class Repository(JsonMixin, OutputMixin, PEXCommand):
         python_requires = None
         if len(pex_info.interpreter_constraints) == 1:
             python_requires = str(
-                PythonIdentity.parse_requirement(pex_info.interpreter_constraints[0]).specifier
+                InterpreterConstraint.parse(pex_info.interpreter_constraints[0]).requires_python
             )
         elif pex_info.interpreter_constraints:
             logger.warning(
