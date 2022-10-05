@@ -13,7 +13,10 @@ from pex.common import die, pluralize
 from pex.environment import ResolveError
 from pex.inherit_path import InheritPath
 from pex.interpreter import PythonInterpreter
-from pex.interpreter_constraints import UnsatisfiableInterpreterConstraintsError
+from pex.interpreter_constraints import (
+    InterpreterConstraints,
+    UnsatisfiableInterpreterConstraintsError,
+)
 from pex.orderedset import OrderedSet
 from pex.os import safe_execv
 from pex.pex_info import PexInfo
@@ -28,7 +31,6 @@ if TYPE_CHECKING:
 
     import attr  # vendor:skip
 
-    from pex.dist_metadata import Requirement
     from pex.interpreter import InterpreterIdentificationError, InterpreterOrError, PathFilter
     from pex.pex import PEX
 else:
@@ -48,7 +50,7 @@ class InterpreterTest(object):
 
     @property
     def interpreter_constraints(self):
-        # type: () -> List[str]
+        # type: () -> InterpreterConstraints
         return self.pex_info.interpreter_constraints
 
     def test_resolve(self, interpreter):
@@ -79,7 +81,7 @@ class InterpreterTest(object):
 def iter_compatible_interpreters(
     path=None,  # type: Optional[Tuple[str, ...]]
     valid_basenames=None,  # type: Optional[Iterable[str]]
-    interpreter_constraints=None,  # type: Optional[Iterable[Union[str, Requirement]]]
+    interpreter_constraints=None,  # type: Optional[InterpreterConstraints]
     preferred_interpreter=None,  # type: Optional[PythonInterpreter]
     interpreter_test=None,  # type: Optional[InterpreterTest]
 ):
@@ -148,10 +150,7 @@ def iter_compatible_interpreters(
         if not interpreter_constraints:
             return interpreter_test.test_resolve(interp) if interpreter_test else True
 
-        if any(
-            interp.identity.matches(interpreter_constraint)
-            for interpreter_constraint in interpreter_constraints
-        ):
+        if interp in interpreter_constraints:
             TRACER.log(
                 "Constraints on interpreters: {}, Matching Interpreter: {}".format(
                     interpreter_constraints, interp.binary
@@ -199,7 +198,7 @@ def iter_compatible_interpreters(
 def _select_path_interpreter(
     path=None,  # type: Optional[Tuple[str, ...]]
     valid_basenames=None,  # type: Optional[Tuple[str, ...]]
-    interpreter_constraints=None,  # type: Optional[Iterable[str]]
+    interpreter_constraints=None,  # type: Optional[InterpreterConstraints]
     preferred_interpreter=None,  # type: Optional[PythonInterpreter]
     interpreter_test=None,  # type: Optional[InterpreterTest]
 ):
@@ -245,7 +244,7 @@ def find_compatible_interpreter(interpreter_test=None):
         if ENV.PEX_PYTHON_PATH:
             constraints.append("PEX_PYTHON_PATH={}".format(ENV.PEX_PYTHON_PATH))
         if interpreter_constraints:
-            constraints.append("Version matches {}".format(" or ".join(interpreter_constraints)))
+            constraints.append("Version matches {}".format(interpreter_constraints))
         return constraints
 
     preferred_interpreter = None  # type: Optional[PythonInterpreter]

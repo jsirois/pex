@@ -10,7 +10,10 @@ import pytest
 
 from pex.common import temporary_dir
 from pex.interpreter import PythonInterpreter
-from pex.interpreter_constraints import UnsatisfiableInterpreterConstraintsError
+from pex.interpreter_constraints import (
+    InterpreterConstraints,
+    UnsatisfiableInterpreterConstraintsError,
+)
 from pex.pex import PEX
 from pex.pex_bootstrapper import (
     InterpreterTest,
@@ -42,7 +45,7 @@ def basenames(*paths):
 def find_interpreters(
     path,  # type: Iterable[str]
     valid_basenames=None,  # type: Optional[Iterable[str]]
-    constraints=None,  # type: Optional[Iterable[str]]
+    constraints=(),  # type: Iterable[str]
     preferred_interpreter=None,  # type: Optional[PythonInterpreter]
 ):
     # type: (...) -> List[str]
@@ -51,7 +54,7 @@ def find_interpreters(
         for interp in iter_compatible_interpreters(
             path=tuple(path),
             valid_basenames=valid_basenames,
-            interpreter_constraints=constraints,
+            interpreter_constraints=InterpreterConstraints.parse(*constraints),
             preferred_interpreter=preferred_interpreter,
         )
     ]
@@ -84,7 +87,9 @@ def test_find_compatible_interpreters():
     all_known_interpreters = set(PythonInterpreter.all())
     all_known_interpreters.add(PythonInterpreter.get())
 
-    interpreters = set(iter_compatible_interpreters(interpreter_constraints=["<3"]))
+    interpreters = set(
+        iter_compatible_interpreters(interpreter_constraints=InterpreterConstraints.parse("<3"))
+    )
     i_rendered = "\n      ".join(sorted(map(repr, interpreters)))
     aki_rendered = "\n      ".join(sorted(map(repr, all_known_interpreters)))
     assert interpreters.issubset(all_known_interpreters), dedent(
@@ -288,7 +293,7 @@ def test_pp_exact_satisfies_constraints():
     py310 = ensure_python_interpreter(PY310)
 
     pb = PEXBuilder()
-    pb.info.add_interpreter_constraint(">=3.7")
+    pb.info.interpreter_constraints = InterpreterConstraints.parse(">=3.7")
     pb.freeze()
 
     with ENV.patch(PEX_PYTHON=py310):
@@ -303,7 +308,7 @@ def test_pp_exact_does_not_satisfy_constraints():
     py310 = ensure_python_interpreter(PY310)
 
     pb = PEXBuilder()
-    pb.info.add_interpreter_constraint("<=3.7")
+    pb.info.interpreter_constraints = InterpreterConstraints.parse("<=3.7")
     pb.freeze()
 
     with ENV.patch(PEX_PYTHON=py310):
