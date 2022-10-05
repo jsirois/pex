@@ -19,6 +19,7 @@ from pex.common import (
     temporary_dir,
     touch,
 )
+from pex.os import WINDOWS
 from pex.typing import TYPE_CHECKING
 
 try:
@@ -46,7 +47,7 @@ def maybe_raises(exception=None):
 
 def atomic_directory_finalize_test(errno, expect_raises=None):
     # type: (int, Optional[Type[Exception]]) -> None
-    with mock.patch("os.rename", spec_set=True, autospec=True) as mock_rename:
+    with mock.patch("pex.fs.safe_rename", spec_set=True, autospec=True) as mock_rename:
         mock_rename.side_effect = OSError(errno, os.strerror(errno))
         with maybe_raises(expect_raises):
             AtomicDirectory("to.dir").finalize()
@@ -145,6 +146,12 @@ def zip_fixture():
         yield zip_file, os.path.join(target_dir, "extract"), one, two
 
 
+skip_if_windows_no_mode_bit_support = pytest.mark.skipif(
+    WINDOWS, reason="Windows silently ignores the mode bits."
+)
+
+
+@skip_if_windows_no_mode_bit_support
 def test_perm_preserving_zipfile_extractall():
     # type: () -> None
     with zip_fixture() as (zip_file, extract_dir, one, two):
@@ -155,6 +162,7 @@ def test_perm_preserving_zipfile_extractall():
             assert extract_perms(two) == extract_perms(os.path.join(extract_dir, "two"))
 
 
+@skip_if_windows_no_mode_bit_support
 def test_perm_preserving_zipfile_extract():
     # type: () -> None
     with zip_fixture() as (zip_file, extract_dir, one, two):
@@ -192,16 +200,19 @@ def assert_chroot_perms(copyfn):
                     assert extract_perms(two) == extract_perms(os.path.join(extract_dir, "two"))
 
 
+@skip_if_windows_no_mode_bit_support
 def test_chroot_perms_copy():
     # type: () -> None
     assert_chroot_perms(Chroot.copy)
 
 
+@skip_if_windows_no_mode_bit_support
 def test_chroot_perms_link_same_device():
     # type: () -> None
     assert_chroot_perms(Chroot.link)
 
 
+@skip_if_windows_no_mode_bit_support
 def test_chroot_perms_link_cross_device():
     # type: () -> None
     with mock.patch("os.link", spec_set=True, autospec=True) as mock_link:
@@ -278,6 +289,7 @@ def test_chroot_zip_symlink():
             assert b"data" == zip.read("symlinked/subdirectory/symlinked")
 
 
+@skip_if_windows_no_mode_bit_support
 def test_can_write_dir_writeable_perms():
     # type: () -> None
     with temporary_dir() as writeable:
@@ -289,6 +301,7 @@ def test_can_write_dir_writeable_perms():
         assert not can_write_dir(path), "Should not be able to write to a file."
 
 
+@skip_if_windows_no_mode_bit_support
 def test_can_write_dir_unwriteable_perms():
     # type: () -> None
     with temporary_dir() as writeable:
