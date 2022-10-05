@@ -871,7 +871,7 @@ def _safe_args(args):
     if WINDOWS:
         argv0 = args[0]
         pex_info = _maybe_load_pex_info(argv0)
-        if pex_info and is_python_script(argv0):
+        if pex_info and is_python_script(argv0, check_executable=False):
             try:
                 return [Virtualenv(os.path.dirname(argv0)).interpreter.binary] + list(args)
             except InvalidVirtualenvError:

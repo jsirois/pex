@@ -22,6 +22,7 @@ from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
 from pex.os import safe_execv
 from pex.pex_info import PexInfo
+from pex.script import is_python_script
 from pex.targets import LocalInterpreter
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING

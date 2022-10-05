@@ -48,7 +48,7 @@ class DistributionScript(object):
 
     def python_script(self):
         # type: () -> Optional[ast.AST]
-        if not is_python_script(self.path):
+        if not is_python_script(self.path, check_executable=False):
             return None
 
         try:

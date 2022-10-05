@@ -583,7 +583,7 @@ class Record(object):
         scripts = {}  # type: Dict[str, Optional[bytes]]
         for script_name in os.listdir(bin_dir):
             script_path = os.path.join(bin_dir, script_name)
-            if is_python_script(script_path):
+            if is_python_script(script_path, check_executable=False):
                 if WINDOWS:
                     name, ext = os.path.splitext(script_name)
                     if ext == ".exe" and name in console_scripts:

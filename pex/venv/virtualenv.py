@@ -304,7 +304,8 @@ class Virtualenv(object):
         scripts = [
             path
             for path in self._base_bin
-            if is_python_script(path) or re.search(r"^[Aa]ctivate", os.path.basename(path))
+            if is_python_script(path, check_executable=False)
+            or re.search(r"^[Aa]ctivate", os.path.basename(path))
         ]
         if scripts:
             rewritten_files = set()
@@ -331,7 +332,9 @@ class Virtualenv(object):
         shebang_bytes = "#!{shebang}\n".format(shebang=" ".join(shebang)).encode("utf-8")
 
         python_scripts = OrderedSet(
-            executable for executable in self.iter_executables() if is_python_script(executable)
+            executable
+            for executable in self.iter_executables()
+            if is_python_script(executable, check_executable=False)
         )
 
         console_scripts = set(
