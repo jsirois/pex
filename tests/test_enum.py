@@ -105,10 +105,10 @@ def test_qualified_name():
         qualified_name
     ), "Expected functions to be handled"
 
-    assert "pex.common.AtomicDirectory" == qualified_name(
+    assert "pex.atomic_directory.AtomicDirectory" == qualified_name(
         AtomicDirectory
     ), "Expected custom types to be handled."
-    expected_prefix = "pex.common." if PY2 else "pex.common.AtomicDirectory."
+    expected_prefix = "pex.atomic_directory." if PY2 else "pex.atomic_directory.AtomicDirectory."
     assert expected_prefix + "finalize" == qualified_name(
         AtomicDirectory.finalize
     ), "Expected methods to be handled."
