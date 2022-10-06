@@ -31,6 +31,8 @@ def is_script(
     """
     if check_executable and not is_exe(path):
         return False
+    elif not os.path.isfile(path):
+        return False
 
     with open(path, "rb") as fp:
         if _SHEBANG_MAGIC == fp.read(len(_SHEBANG_MAGIC)):
