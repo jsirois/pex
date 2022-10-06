@@ -3,11 +3,13 @@
 
 import os
 import subprocess
+import sys
 
 import pytest
 
 from pex.common import safe_mkdir, temporary_dir
 from pex.executor import Executor
+from pex.os import WINDOWS
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -21,10 +23,12 @@ TEST_STDOUT = "testing stdout"
 TEST_STDERR = "testing stder"
 TEST_CODE = 3
 
+SHELL_ENV = {"COMSPEC": "CMD.EXE"} if WINDOWS else {}
+
 
 def test_executor_open_process_wait_return():
     # type: () -> None
-    process = Executor.open_process("exit 8", shell=True)
+    process = Executor.open_process("exit 8", shell=True, env=SHELL_ENV)
     exit_code = process.wait()
     assert exit_code == 8
 
@@ -32,7 +36,9 @@ def test_executor_open_process_wait_return():
 def test_executor_open_process_communicate():
     # type: () -> None
     process = Executor.open_process(
-        ["/bin/echo", "-n", "hello"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        [sys.executable, "-c" "import sys; sys.stdout.write('hello')"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     stdout, stderr = process.communicate()
     assert stdout.decode("utf-8") == "hello"
@@ -41,12 +47,27 @@ def test_executor_open_process_communicate():
 
 def test_executor_execute():
     # type: () -> None
-    assert Executor.execute("/bin/echo -n stdout >&1", shell=True) == ("stdout", "")
-    assert Executor.execute("/bin/echo -n stderr >&2", shell=True) == ("", "stderr")
-    assert Executor.execute("/bin/echo -n TEST | tee /dev/stderr", shell=True) == ("TEST", "TEST")
-    assert Executor.execute(["/bin/echo", "hello"]) == ("hello\n", "")
-    assert Executor.execute(["/bin/echo", "-n", "hello"]) == ("hello", "")
-    assert Executor.execute("/bin/echo -n $HELLO", env={"HELLO": "hey"}, shell=True) == ("hey", "")
+
+    assert ("hello", "") == Executor.execute(
+        [sys.executable, "-c" "import sys; sys.stdout.write('hello')"]
+    )
+
+    def assert_shell(command, expected_stdout="", expected_stderr="", **extra_env):
+        env = SHELL_ENV.copy()
+        env.update(extra_env)
+        assert (expected_stdout, expected_stderr) == Executor.execute(command, env=env, shell=True)
+
+    if WINDOWS:
+        assert_shell("echo stdout", expected_stdout="stdout\r\n")
+        assert_shell("echo stderr>&2", expected_stderr="stderr\r\n")
+        assert_shell("echo %HELLO%", expected_stdout="hey\r\n", HELLO="hey")
+    else:
+        assert_shell("/bin/echo -n stdout >&1", expected_stdout="stdout")
+        assert_shell("/bin/echo -n stderr >&2", expected_stderr="stderr")
+        assert_shell(
+            "/bin/echo -n TEST | tee /dev/stderr", expected_stdout="TEST", expected_stderr="TEST"
+        )
+        assert_shell("/bin/echo -n $HELLO", expected_stdout="hey", HELLO="hey")
 
 
 def test_executor_execute_zero():
@@ -102,4 +123,7 @@ def test_executor_execute_dir():
         assert os.path.isdir(test_dir)
         with pytest.raises(Executor.ExecutionError) as e:
             Executor.execute(test_dir)
-        assert test_dir in str(e)
+        # For Windows, the path string in the stringified exception is double escaped, i.e.:
+        # C:\\\\... vs C:\\..
+        if not WINDOWS:
+            assert test_dir in str(e)
