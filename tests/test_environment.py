@@ -446,8 +446,16 @@ def assert_cpython_38_environment_can_add(cpython_38_environment):
 
 def test_can_add_ranking_platform_tag_more_specific(assert_cpython_38_environment_can_add):
     # type: (Callable[[FingerprintedDistribution], _RankedDistribution]) -> None
+    platform_tag = PythonInterpreter.get().identity.platform_tag
     ranked_specific = assert_cpython_38_environment_can_add(
-        create_dist("foo-1.0.0-cp38-cp38-macosx_10_9_x86_64.linux_x86_64.whl", "foo", "1.0.0")
+        create_dist(
+            location=(
+                "foo-1.0.0-cp38-cp38-foo_platform.bar_platform.baz_platform."
+                "{current_platform}.whl".format(current_platform=platform_tag)
+            ),
+            project_name="foo",
+            version="1.0.0",
+        )
     )
     ranked_universal = assert_cpython_38_environment_can_add(
         create_dist("foo-2.0.0-py2.py3-none-any.whl", "foo", "2.0.0")
@@ -466,9 +474,9 @@ def test_can_add_ranking_platform_tag_more_specific(assert_cpython_38_environmen
 def test_can_add_ranking_version_newer_tie_break(assert_cpython_38_environment_can_add):
     # type: (Callable[[FingerprintedDistribution], _RankedDistribution]) -> None
     ranked_v1 = assert_cpython_38_environment_can_add(
-        create_dist("foo-1.0.0-cp38-cp38-macosx_10_9_x86_64.linux_x86_64.whl", "foo", "1.0.0")
+        create_dist("foo-1.0.0-py3-none-any.whl", "foo", "1.0.0")
     )
     ranked_v2 = assert_cpython_38_environment_can_add(
-        create_dist("foo-2.0.0-cp38-cp38-macosx_10_9_x86_64.linux_x86_64.whl", "foo", "2.0.0")
+        create_dist("foo-2.0.0-py3-none-any.whl", "foo", "2.0.0")
     )
     assert ranked_v2 < ranked_v1
