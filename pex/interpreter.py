@@ -26,6 +26,7 @@ from pex.pep_508 import MarkerEnvironment
 from pex.platforms import Platform
 from pex.pyenv import Pyenv
 from pex.sysconfig import EXE_EXTENSION, SCRIPT_DIR, script_name
+from pex.third_party.packaging import __version__ as packaging_version
 from pex.third_party.packaging import tags
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast, overload
@@ -140,6 +141,7 @@ class PythonIdentity(object):
                 or cast(str, getattr(sys, "base_prefix", sys.prefix))
             ),
             sys_path=sys_path,
+            packaging_version=packaging_version,
             python_tag=preferred_tag.interpreter,
             abi_tag=preferred_tag.abi,
             platform_tag=preferred_tag.platform,
@@ -153,7 +155,7 @@ class PythonIdentity(object):
     def decode(cls, encoded):
         TRACER.log("creating PythonIdentity from encoded: %s" % encoded, V=9)
         values = json.loads(encoded)
-        if len(values) != 11:
+        if len(values) != 12:
             raise cls.InvalidError("Invalid interpreter identity: %s" % encoded)
 
         supported_tags = values.pop("supported_tags")
@@ -189,6 +191,7 @@ class PythonIdentity(object):
         prefix,  # type: str
         base_prefix,  # type: str
         sys_path,  # type: Iterable[str]
+        packaging_version,  # type: str
         python_tag,  # type: str
         abi_tag,  # type: str
         platform_tag,  # type: str
@@ -206,6 +209,7 @@ class PythonIdentity(object):
         self._prefix = prefix
         self._base_prefix = base_prefix
         self._sys_path = tuple(sys_path)
+        self._packaging_version = packaging_version
         self._python_tag = python_tag
         self._abi_tag = abi_tag
         self._platform_tag = platform_tag
@@ -220,6 +224,7 @@ class PythonIdentity(object):
             prefix=self._prefix,
             base_prefix=self._base_prefix,
             sys_path=self._sys_path,
+            packaging_version=self._packaging_version,
             python_tag=self._python_tag,
             abi_tag=self._abi_tag,
             platform_tag=self._platform_tag,
