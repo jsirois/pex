@@ -19,7 +19,6 @@ from pex.executor import Executor
 from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.jobs import Job
-from pex.os import MAC
 from pex.pyenv import Pyenv
 from pex.sysconfig import script_name
 from pex.testing import (
@@ -262,7 +261,13 @@ class TestPythonInterpreter(object):
             ):
                 # type: (...) -> None
                 python = interpreter_for_shim(shim_name)
-                assert expected_binary_path == python.binary
+                # N.B.: Instead of comparing the path of the pyenv Python binary, we compare its
+                # directory and version since then directory can contain multiple pythons (e.g.:
+                # for Python 3.10.7 you'll have python, python3 and python3.10 executables) and
+                # these Pythons may or may not be copies (i.e.: not symlink back to a sole Python
+                # executable).
+                assert os.path.dirname(expected_binary_path) == os.path.dirname(python.binary)
+                assert PythonInterpreter.from_binary(expected_binary_path).version == python.version
 
             def assert_shim_inactive(shim_name):
                 # type: (str) -> None
