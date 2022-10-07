@@ -8,7 +8,7 @@ from io import open
 from pex.common import temporary_dir
 from pex.inherit_path import InheritPath
 from pex.pex_builder import PEXBuilder
-from pex.testing import run_simple_pex, make_env
+from pex.testing import make_env, run_simple_pex
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

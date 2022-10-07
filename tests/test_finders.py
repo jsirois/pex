@@ -37,7 +37,9 @@ def test_get_script_from_distributions(tmpdir):
     dist_script = get_script_from_distributions("cfn-signal", [dist])
     assert dist_script is not None
     assert dist_script.dist is dist
-    assert InstalledWheel.load(install_dir).stashed_path(SCRIPT_DIR, "cfn-signal") == dist_script.path
+    assert (
+        InstalledWheel.load(install_dir).stashed_path(SCRIPT_DIR, "cfn-signal") == dist_script.path
+    )
     assert dist_script.read_contents().startswith(
         b"#!"
     ), "Expected a `scripts`-style script w/shebang."
