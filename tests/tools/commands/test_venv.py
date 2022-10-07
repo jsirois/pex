@@ -274,10 +274,7 @@ def test_binary_path(create_pex_venv):
     returncode, stdout, stderr = execute_venv_pex_interpreter(
         venv, code=code, PATH=tempfile.gettempdir()
     )
-    # N.B.: Windows venv python.exe implicitly puts its Script directory on the PATH; so it can
-    # always see the sibling scripts.
-    expected_returncode = 0 if WINDOWS else 111
-    assert expected_returncode == returncode, stdout + stderr
+    assert 111 == returncode, stdout + stderr
 
     venv_bin_path = create_pex_venv("-f", "--bin-path", "prepend")
     returncode, _, _ = execute_venv_pex_interpreter(
