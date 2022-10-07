@@ -430,6 +430,9 @@ def test_pythonpath_isolation_inherit_path_prefer(pythonpath_isolation_test):
     )
 
 
+@pytest.mark.skipif(
+    WINDOWS, reason="Changing permission bits does not affect executability on Windows."
+)
 def test_pex_executable():
     # type: () -> None
     # Tests that pex keeps executable permissions
@@ -526,7 +529,7 @@ def test_pex_paths():
 @contextmanager
 def _add_test_hello_to_pex(ep):
     # type: (str) -> Iterator[PEXBuilder]
-    with tempfile.NamedTemporaryFile() as tf:
+    with named_temporary_file() as tf:
         tf.write(b'def hello(): print("hello")')
         tf.flush()
 
@@ -636,7 +639,7 @@ def test_execute_interpreter_dashm_module():
     with temporary_dir() as pex_chroot:
         pex_builder = PEXBuilder(path=pex_chroot)
         pex_builder.add_source(None, "foo/__init__.py")
-        with tempfile.NamedTemporaryFile(mode="w") as fp:
+        with named_temporary_file(mode="w") as fp:
             fp.write(
                 dedent(
                     """\
@@ -676,7 +679,7 @@ def test_execute_interpreter_dashm_module_with_python_options():
         # that we would expect to fail.
         # adding the -O option will ignore that assertion
         # see: https://docs.python.org/3/using/cmdline.html#cmdoption-O
-        with tempfile.NamedTemporaryFile(mode="w") as fp:
+        with named_temporary_file(mode="w") as fp:
             fp.write(
                 dedent(
                     """\
@@ -757,7 +760,7 @@ def test_execute_interpreter_file_program():
     with temporary_dir() as pex_chroot:
         pex_builder = PEXBuilder(path=pex_chroot)
         pex_builder.freeze()
-        with tempfile.NamedTemporaryFile() as fp:
+        with named_temporary_file() as fp:
             fp.write(b'import sys; print(" ".join(sys.argv))')
             fp.flush()
             process = PEX(pex_chroot).run(
@@ -768,7 +771,7 @@ def test_execute_interpreter_file_program():
             )
             stdout, stderr = process.communicate()
 
-            assert 0 == process.returncode
+            assert 0 == process.returncode, stderr
             assert "{} one two".format(fp.name).encode("utf-8") == stdout.strip()
             assert b"" == stderr
 
@@ -779,7 +782,7 @@ def test_pex_run_strip_env():
         pex_env = dict(PEX_MODULE="does_not_exist_in_sub_pex", PEX_ROOT=pex_root)
         with environment_as(**pex_env), temporary_dir() as pex_chroot:
             pex_builder = PEXBuilder(path=pex_chroot)
-            with tempfile.NamedTemporaryFile(mode="w") as fp:
+            with named_temporary_file(mode="w") as fp:
                 fp.write(
                     dedent(
                         """

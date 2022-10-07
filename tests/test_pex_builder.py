@@ -77,7 +77,7 @@ def test_pex_builder_preamble():
         should_create = os.path.join(td, "foo.1")
 
         tempfile_preamble = "\n".join(
-            ["import sys", "open('{0}', 'w').close()".format(should_create), "sys.exit(3)"]
+            ["import sys", "open({!r}, 'w').close()".format(should_create), "sys.exit(3)"]
         )
 
         pb = PEXBuilder(preamble=tempfile_preamble)

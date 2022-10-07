@@ -4,7 +4,6 @@
 import os
 from argparse import ArgumentParser
 from contextlib import contextmanager
-from tempfile import NamedTemporaryFile
 
 import pytest
 
@@ -26,6 +25,7 @@ from pex.testing import (
     run_simple_pex,
 )
 from pex.typing import TYPE_CHECKING
+from pex.util import named_temporary_file
 from pex.venv.bin_path import BinPath
 
 if TYPE_CHECKING:
@@ -55,7 +55,7 @@ def test_clp_constraints_txt():
 
 def test_clp_arg_file():
     # type: () -> None
-    with NamedTemporaryFile() as tmpfile:
+    with named_temporary_file() as tmpfile:
         tmpfile.write(to_bytes("-r\nrequirements1.txt\r-r\nrequirements2.txt"))
         tmpfile.flush()
 
@@ -66,7 +66,7 @@ def test_clp_arg_file():
 
 def test_clp_preamble_file():
     # type: () -> None
-    with NamedTemporaryFile() as tmpfile:
+    with named_temporary_file() as tmpfile:
         tmpfile.write(to_bytes('print "foo!"'))
         tmpfile.flush()
 

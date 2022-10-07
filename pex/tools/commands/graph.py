@@ -19,6 +19,7 @@ from pex.result import Ok, Result
 from pex.tools.command import PEXCommand
 from pex.tools.commands.digraph import DiGraph
 from pex.typing import TYPE_CHECKING
+from pex.util import named_temporary_file
 from pex.variables import ENV
 
 if TYPE_CHECKING:
@@ -139,7 +140,7 @@ class Graph(OutputMixin, PEXCommand):
         if self.is_stdout(self.options):
             tmpdir = os.path.join(ENV.PEX_ROOT, "tmp")
             safe_mkdir(tmpdir)
-            with tempfile.NamedTemporaryFile(
+            with named_temporary_file(
                 prefix="{}.".format(__name__),
                 suffix=".deps.{}".format(self.options.format),
                 dir=tmpdir,
