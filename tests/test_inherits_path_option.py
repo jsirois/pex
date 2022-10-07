@@ -8,7 +8,7 @@ from io import open
 from pex.common import temporary_dir
 from pex.inherit_path import InheritPath
 from pex.pex_builder import PEXBuilder
-from pex.testing import run_simple_pex
+from pex.testing import run_simple_pex, make_env
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ def write_and_run_simple_pex(inheriting):
         pb.set_executable(os.path.join(td, "exe.py"))
         pb.freeze()
         pb.build(pex_path)
-        stdout, _ = run_simple_pex(pex_path, env={"PEX_VERBOSE": "1"})
+        stdout, _ = run_simple_pex(pex_path, env=make_env(PEX_VERBOSE=1))
         yield stdout.decode("utf-8")
 
 

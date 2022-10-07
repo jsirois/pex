@@ -40,7 +40,10 @@ def test_is_exe(tmpdir):
 
     not_exe = os.path.join(str(tmpdir), "not.exe")
     touch(not_exe)
-    assert not is_exe(not_exe)
+    assert WINDOWS == is_exe(not_exe), (
+        "On Windows any file with the .exe extension (really any file with an extension in "
+        "PATHEXT) is considered an executable."
+    )
 
     exe_dir = os.path.join(str(tmpdir), "dir.exe")
     os.mkdir(exe_dir)

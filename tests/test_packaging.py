@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from pex.interpreter import PythonInterpreter
+from pex.sysconfig import script_name
 from pex.testing import make_env, pex_check_output
 from pex.tools.commands import all_commands
 from pex.venv.virtualenv import Virtualenv
@@ -21,7 +22,7 @@ def test_expected_scripts():
     # type: () -> None
     interpreter = PythonInterpreter.get()
     assert interpreter.is_venv
-    assert {"pex", "pex-tools"}.issubset(
+    assert {script_name(script) for script in ("pex", "pex-tools")}.issubset(
         os.path.basename(exe) for exe in Virtualenv(interpreter.prefix).iter_executables()
     )
 

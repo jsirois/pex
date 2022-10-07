@@ -11,6 +11,7 @@ from pex.pep_376 import InstalledWheel
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pip.installation import get_pip
+from pex.sysconfig import SCRIPT_DIR
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ def test_get_script_from_distributions(tmpdir):
     dist_script = get_script_from_distributions("cfn-signal", [dist])
     assert dist_script is not None
     assert dist_script.dist is dist
-    assert InstalledWheel.load(install_dir).stashed_path("bin/cfn-signal") == dist_script.path
+    assert InstalledWheel.load(install_dir).stashed_path(SCRIPT_DIR, "cfn-signal") == dist_script.path
     assert dist_script.read_contents().startswith(
         b"#!"
     ), "Expected a `scripts`-style script w/shebang."
