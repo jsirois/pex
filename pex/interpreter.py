@@ -123,10 +123,14 @@ class PythonIdentity(object):
         # Pex identifies interpreters using a bit of Pex code injected via an extraction of that
         # code under the `PEX_ROOT` adjoined to `sys.path` via `PYTHONPATH`. Pex also exposes the
         # vendored attrs distribution so that its `cache_hash=True` feature can work (see the
-        # bottom of pex/third_party/__init__.py where the vendor importer is installed). We ignore
-        # such adjoined `sys.path` entries to discover the true base interpreter `sys.path`.
+        # bottom of pex/third_party/__init__.py where the vendor importer is installed). FInally,
+        # Pex does interpreter identification in an empty temporary directory to ensure the `""`
+        # sys.path entry doesn't pick up anything stray. We ignore all such adjoined `sys.path`
+        # entries to discover the true base interpreter `sys.path`.
         pythonpath = frozenset(
-            os.environ.get("PYTHONPATH", "").split(os.pathsep) + list(third_party.exposed())
+            os.environ.get("PYTHONPATH", "").split(os.pathsep)
+            + list(third_party.exposed())
+            + [os.getcwd()]
         )
         sys_path = [item for item in sys.path if item and item not in pythonpath]
 
