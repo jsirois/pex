@@ -188,6 +188,14 @@ def test_verbose_verbose_verbose_venv(
     expected.update(
         env_markers=venv.interpreter.identity.env_markers.as_dict(),
         venv=True,
-        base_interpreter=python310.binary,
     )
-    assert expected == json.loads(output)
+    data = json.loads(output)
+
+    # On Windows each interpreter in a set (i.e: {python.exe, python3.exe, python3.10.exe}) is an
+    # independent copy of a small binary stub that loads a larger python dll. As such we accept any
+    # sibling Python as long as it has the same full version.
+    base_interpreter = data.pop("base_interpreter")
+    assert os.path.dirname(python310.binary) == os.path.dirname(base_interpreter)
+    assert python310.version == PythonInterpreter.from_binary(base_interpreter).version
+
+    assert expected == data
