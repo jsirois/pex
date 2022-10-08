@@ -2,6 +2,7 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
 import os
+import re
 import shutil
 import sys
 from textwrap import dedent
@@ -282,7 +283,7 @@ def test_pp_exact_on_ppp():
 
     with ENV.patch(
         PEX_PYTHON=py310,
-        PEX_PYTHON_PATH=":".join(os.path.dirname(py) for py in (py38, py39, py310)),
+        PEX_PYTHON_PATH=os.pathsep.join(os.path.dirname(py) for py in (py38, py39, py310)),
     ):
         assert PythonInterpreter.from_binary(py310) == find_compatible_interpreter()
 
@@ -314,7 +315,7 @@ def test_pp_exact_does_not_satisfy_constraints():
     with ENV.patch(PEX_PYTHON=py310):
         with pytest.raises(
             UnsatisfiableInterpreterConstraintsError,
-            match=r"Failed to find a compatible PEX_PYTHON={pp}.".format(pp=py310),
+            match=r"Failed to find a compatible PEX_PYTHON={pp}.".format(pp=re.escape(py310)),
         ):
             find_compatible_interpreter(
                 interpreter_test=InterpreterTest(entry_point=pb.path(), pex_info=pb.info),
@@ -329,10 +330,13 @@ def test_pp_exact_not_on_ppp():
     py310 = ensure_python_interpreter(PY310)
 
     with ENV.patch(
-        PEX_PYTHON=py310, PEX_PYTHON_PATH=":".join(os.path.dirname(py) for py in (py38, py39))
+        PEX_PYTHON=py310,
+        PEX_PYTHON_PATH=os.pathsep.join(os.path.dirname(py) for py in (py38, py39)),
     ):
         with pytest.raises(
             UnsatisfiableInterpreterConstraintsError,
-            match=r"The specified PEX_PYTHON={pp} did not meet other constraints.".format(pp=py310),
+            match=r"The specified PEX_PYTHON={pp} did not meet other constraints.".format(
+                pp=re.escape(py310)
+            ),
         ):
             find_compatible_interpreter()

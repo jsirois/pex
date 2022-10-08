@@ -236,7 +236,7 @@ def test_venv_pex(create_pex_venv):
                 user_package=expected_file_path(venv, "user.package"),
             )
         ),
-        PEX_EXTRA_SYS_PATH=":".join(pex_extra_sys_path),
+        PEX_EXTRA_SYS_PATH=os.pathsep.join(pex_extra_sys_path),
     )
     assert 0 == returncode, stderr
 

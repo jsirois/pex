@@ -571,7 +571,9 @@ def ensure_python_distribution(version):
         8,
     ), "Test uses pyenv {} interpreter which is not supported on Windows.".format(version)
 
-    basedir = os.path.expanduser(os.environ.get("_PEX_TEST_PYENV_ROOT", "~/.pex_dev"))
+    basedir = os.path.expanduser(
+        os.environ.get("_PEX_TEST_PYENV_ROOT", os.path.join("~", ".pex_dev"))
+    )
     clone_dir = os.path.abspath(os.path.join(basedir, "pyenv-win" if WINDOWS else "pyenv"))
     pyenv_root = os.path.join(clone_dir, "pyenv-win") if WINDOWS else clone_dir
     interpreter_location = os.path.join(pyenv_root, "versions", version)

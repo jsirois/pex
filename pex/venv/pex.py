@@ -324,7 +324,7 @@ def _populate_sources(
             print(
                 "import os, sys; "
                 "sys.path.extend("
-                "entry for entry in os.environ.get('{env_var}', '').split(':') if entry"
+                "entry for entry in os.environ.get('{env_var}', '').split(os.pathsep) if entry"
                 ")".format(env_var=env_var),
                 file=fp,
             )
