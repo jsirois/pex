@@ -259,7 +259,7 @@ def test_extract_lifecycle(pex, pex_tools_env, tmpdir):
     )
     result.assert_success()
 
-    _, pip = ensure_python_venv(PY310)
+    pip = ensure_python_venv(PY310).bin_path("pip")
     pex_check_call(args=[pip, "install", "--no-index", "--find-links", find_links_url, "example"])
     example_console_script = os.path.join(os.path.dirname(pip), "example")
 

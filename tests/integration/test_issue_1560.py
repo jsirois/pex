@@ -37,7 +37,8 @@ def test_build_isolation(
 ):
     # type: (...) -> None
 
-    python, pip = venv_factory.create_venv()
+    venv = venv_factory.create_venv()
+    python = venv.interpreter.binary
     result = run_pex_command(args=[pex_project_dir, "--no-build-isolation"], python=python)
     result.assert_failure()
     assert "raise BackendUnavailable(" in result.error, (
@@ -48,7 +49,7 @@ def test_build_isolation(
     pyproject = toml.load(os.path.join(pex_project_dir, "pyproject.toml"))
     build_requirements = pyproject["build-system"]["requires"]
     assert len(build_requirements) > 0
-    pex_check_call(args=[pip, "install"] + build_requirements)
+    pex_check_call(args=[venv.bin_path("pip"), "install"] + build_requirements)
 
     pex = os.path.join(str(tmpdir), "pex")
     run_pex_command(

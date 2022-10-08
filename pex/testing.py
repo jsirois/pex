@@ -516,22 +516,53 @@ _ALL_PY_VERSIONS_TO_VERSION_INFO = {
 
 @attr.s(frozen=True)
 class PythonDistribution(object):
-    interpreter_locations = attr.ib()  # type: str
-    executable = attr.ib()  # type: str
-    version = attr.ib()  # type: Tuple[int, ...]
+    @classmethod
+    def from_venv(cls, venv):
+        # type: (str) -> PythonDistribution
+        virtualenv = Virtualenv(venv)
+        return cls(home=venv, interpreter=virtualenv.interpreter, pip=virtualenv.bin_path("pip"))
+
+    home = attr.ib()  # type: str
+    interpreter = attr.ib()  # type: PythonInterpreter
     pip = attr.ib()  # type: str
-    pyenv = attr.ib()  # type: str
+
+    @property
+    def binary(self):
+        # type: () -> str
+        return self.interpreter.binary
+
+
+@attr.s(frozen=True)
+class PyenvPythonDistribution(PythonDistribution):
     pyenv_root = attr.ib()  # type: str
+    _pyenv_script = attr.ib()  # type: str
 
-    def execute_pyenv(self, *args):
-        # type: (*str) -> Text
-        pass
+    def pyenv_env(self, **extra_env):
+        # type: (**str) -> Dict[str, str]
+        env = os.environ.copy()
+        env.update(extra_env)
+        env["PYENV_ROOT"] = self.pyenv_root
+        env["PATH"] = os.pathsep.join(
+            [os.path.join(self.pyenv_root, path) for path in ("bin", "shims")]
+            + os.getenv("PATH", os.defpath).split(os.pathsep)
+        )
+        return env
+
+    def run_pyenv(
+        self,
+        args,  # type: Iterable[str]
+        **popen_kwargs  # type: Any
+    ):
+        # type: (...) -> Text
+        return pex_check_output(
+            args=[self._pyenv_script] + list(args),
+            env=self.pyenv_env(**popen_kwargs.pop("env", {})),
+            **popen_kwargs
+        ).decode("utf-8")
 
 
-# TODO(John Sirois): XXX: Return a data structure that contains Pyenv execution function as well as
-#  PYENV_ROOT, etc...
 def ensure_python_distribution(version):
-    # type: (str) -> Tuple[str, str, str, Callable[[Iterable[str]], Text]]
+    # type: (str) -> PyenvPythonDistribution
     if version not in ALL_PY_VERSIONS:
         raise ValueError("Please constrain version to one of {}".format(ALL_PY_VERSIONS))
 
@@ -546,8 +577,6 @@ def ensure_python_distribution(version):
     interpreter_location = os.path.join(pyenv_root, "versions", version)
 
     pyenv = os.path.join(pyenv_root, "bin", "pyenv.bat" if WINDOWS else "pyenv")
-    pyenv_env = os.environ.copy()
-    pyenv_env["PYENV_ROOT"] = pyenv_root
 
     if WINDOWS:
         python = os.path.join(interpreter_location, "python.exe")
@@ -577,7 +606,8 @@ def ensure_python_distribution(version):
                     PYENV_GIT_URL,
                 ]
             )
-            env = pyenv_env.copy()
+            env = os.environ.copy()
+            env["PYENV_ROOT"] = pyenv_root
             if sys.platform.lower().startswith("linux"):
                 env["CONFIGURE_OPTS"] = "--enable-shared"
                 # The pyenv builder detects `--enable-shared` and sets up `RPATH` via
@@ -591,11 +621,13 @@ def ensure_python_distribution(version):
             pex_check_call([pyenv, "install", version], env=env)
             pex_check_call([python, "-m", "pip", "install", "-U", "pip<22.1"])
 
-    def run_pyenv(args):
-        # type: (Iterable[str]) -> Text
-        return to_unicode(pex_check_output([pyenv] + list(args), env=pyenv_env))
-
-    return interpreter_location, python, pip, run_pyenv
+    return PyenvPythonDistribution(
+        home=interpreter_location,
+        interpreter=PythonInterpreter.from_binary(python),
+        pip=pip,
+        pyenv_root=pyenv_root,
+        pyenv_script=pyenv,
+    )
 
 
 def ensure_python_venv(
@@ -603,17 +635,17 @@ def ensure_python_venv(
     latest_pip=True,  # type: bool
     system_site_packages=False,  # type: bool
 ):
-    # type: (...) -> Tuple[str, str]
-    _, python, pip, _ = ensure_python_distribution(version)
+    # type: (...) -> Virtualenv
+    pyenv_distribution = ensure_python_distribution(version)
     venv = safe_mkdtemp()
     if _ALL_PY_VERSIONS_TO_VERSION_INFO[version][0] == 3:
-        args = [python, "-m", "venv", venv]
+        args = [pyenv_distribution.binary, "-m", "venv", venv]
         if system_site_packages:
             args.append("--system-site-packages")
         pex_check_call(args=args)
     else:
-        pex_check_call(args=[pip, "install", "virtualenv==16.7.10"])
-        args = [python, "-m", "virtualenv", venv, "-q"]
+        pex_check_call(args=[pyenv_distribution.pip, "install", "virtualenv==16.7.10"])
+        args = [pyenv_distribution.binary, "-m", "virtualenv", venv, "-q"]
         if system_site_packages:
             args.append("--system-site-packages")
         pex_check_call(args=args)
@@ -622,13 +654,12 @@ def ensure_python_venv(
     )
     if latest_pip:
         pex_check_call(args=[python, "-mpip", "install", "-U", "pip<22.1"])
-    return python, pip
+    return Virtualenv(venv)
 
 
 def ensure_python_interpreter(version):
     # type: (str) -> str
-    _, python, _, _ = ensure_python_distribution(version)
-    return python
+    return ensure_python_distribution(version).binary
 
 
 class InterpreterImplementation(Enum["InterpreterImplementation.Value"]):
@@ -679,14 +710,14 @@ def python_venv(
     system_site_packages=False,  # type: bool
     venv_dir=None,  # type: Optional[str]
 ):
-    # type: (...) -> Tuple[str, str]
+    # type: (...) -> Virtualenv
     venv = Virtualenv.create(
         venv_dir=venv_dir or safe_mkdtemp(),
         interpreter=PythonInterpreter.from_binary(python),
         system_site_packages=system_site_packages,
     )
     venv.install_pip()
-    return venv.interpreter.binary, venv.bin_path("pip")
+    return venv
 
 
 def skip_unless_python27_venv(
@@ -694,7 +725,7 @@ def skip_unless_python27_venv(
     system_site_packages=False,  # type: bool
     venv_dir=None,  # type: Optional[str]
 ):
-    # type: (...) -> Tuple[str, str]
+    # type: (...) -> Virtualenv
     return python_venv(
         skip_unless_python27(implementation=implementation),
         system_site_packages=system_site_packages,
@@ -718,10 +749,10 @@ def all_pythons():
 @attr.s(frozen=True)
 class VenvFactory(object):
     python_version = attr.ib()  # type: str
-    _factory = attr.ib()  # type: Callable[[], Tuple[str, str]]
+    _factory = attr.ib()  # type: Callable[[], Virtualenv]
 
     def create_venv(self):
-        # type: () -> Tuple[str, str]
+        # type: () -> Virtualenv
         return self._factory()
 
 

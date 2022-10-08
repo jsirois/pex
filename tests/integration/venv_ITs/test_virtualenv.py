@@ -72,9 +72,7 @@ def test_iter_distributions_setuptools_not_leaked(tmpdir):
 def test_iter_distributions(venv_factory):
     # type: (VenvFactory) -> None
 
-    python, pip = venv_factory.create_venv()
-    venv = Virtualenv.enclosing(python)
-    assert venv is not None
+    venv = venv_factory.create_venv()
 
     dists = index_distributions(venv)
     pip_dist = dists.get(ProjectName("pip"))
@@ -82,7 +80,7 @@ def test_iter_distributions(venv_factory):
     assert os.path.realpath(venv.site_packages_dir) == os.path.realpath(pip_dist.location)
     assert ProjectName("cowsay") not in dists
 
-    pex_check_call(args=[pip, "install", "cowsay==4.0"])
+    pex_check_call(args=[venv.bin_path("pip"), "install", "cowsay==4.0"])
     dists = index_distributions(venv)
     cowsay_dist = dists.get(ProjectName("cowsay"))
     assert cowsay_dist is not None, "Expected venv to have cowsay installed."

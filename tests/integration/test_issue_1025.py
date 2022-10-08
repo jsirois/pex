@@ -37,12 +37,15 @@ def create_pth():
 
 
 def test_extras_isolation(create_pth):
-    python, pip = ensure_python_venv(PY310)
+    python_venv = ensure_python_venv(PY310)
+    python = python_venv.interpreter.binary
     interpreter = PythonInterpreter.from_binary(python)
     _, stdout, _ = interpreter.execute(args=["-c", "import site; print(site.getsitepackages()[0])"])
     with temporary_dir() as tmpdir:
         sitedir = os.path.join(tmpdir, "sitedir")
-        Executor.execute(cmd=[pip, "install", "--target", sitedir, "ansicolors==1.1.8"])
+        Executor.execute(
+            cmd=[python_venv.bin_path("pip"), "install", "--target", sitedir, "ansicolors==1.1.8"]
+        )
 
         pth_path = os.path.join(stdout.strip(), "issues_1025.{}.pth".format(uuid.uuid4().hex))
         create_pth(pth_path, sitedir)

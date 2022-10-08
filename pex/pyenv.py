@@ -123,7 +123,7 @@ class Pyenv(object):
             with TRACER.timed("Calculating active version for {}...".format(self), V=6):
                 active_versions = self.pyenv.active_versions(search_dir=search_dir)
                 if active_versions:
-                    binary_name = os.path.basename(self.path)
+                    binary_name, _ = os.path.splitext(os.path.basename(self.path))
                     if self.name == "python" and not self.major and not self.minor:
                         for pyenv_version in active_versions:
                             if pyenv_version[0] in self._PYENV_CPYTHON_VERSION_LEADING_CHARS:

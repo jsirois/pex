@@ -15,6 +15,7 @@ from pex.testing import (
     skip_unless_python27_venv,
 )
 from pex.typing import TYPE_CHECKING
+from pex.venv.virtualenv import Virtualenv
 
 if TYPE_CHECKING:
     from typing import Callable, MutableSet
@@ -26,49 +27,43 @@ if TYPE_CHECKING:
         pytest.param(
             lambda system_site_packages: skip_unless_python27_venv(
                 system_site_packages=system_site_packages
-            )[0],
+            ),
             id="virtualenv-16.7.10",
         ),
         pytest.param(
             lambda system_site_packages: ensure_python_venv(
                 PY310, system_site_packages=system_site_packages
-            )[0],
+            ),
             id="pyvenv",
         ),
     ],
 )
 def test_setuptools_isolation_with_system_site_packages(
-    create_venv,  # type: Callable[[bool], str]
+    create_venv,  # type: Callable[[bool], Virtualenv]
 ):
     # type: (...) -> None
-    system_site_packages_venv_python = create_venv(True)
+    system_site_packages_venv = create_venv(True)
     standard_venv = create_venv(False)
 
     print_sys_path_code = "import os, sys; print('\\n'.join(map(os.path.realpath, sys.path)))"
 
-    def get_sys_path(python):
-        # type: (str) -> MutableSet[str]
-        return OrderedSet(
-            os.path.realpath(entry) for entry in PythonInterpreter.from_binary(python).sys_path
-        )
+    def get_sys_path(venv):
+        # type: (Virtualenv) -> MutableSet[str]
+        return OrderedSet(os.path.realpath(entry) for entry in venv.interpreter.sys_path)
 
-    system_site_packages_venv_sys_path = get_sys_path(system_site_packages_venv_python)
+    system_site_packages_venv_sys_path = get_sys_path(system_site_packages_venv)
     standard_venv_sys_path = get_sys_path(standard_venv)
 
-    def venv_dir(python):
-        # type: (str) -> str
-        bin_dir = os.path.dirname(python)
-        venv_dir = os.path.dirname(bin_dir)
-        return os.path.realpath(venv_dir)
+    def venv_dir(venv):
+        # type: (Virtualenv) -> str
+        return os.path.realpath(venv.venv_dir)
 
     system_site_packages = {
         p
         for p in (system_site_packages_venv_sys_path - standard_venv_sys_path)
         if (
             "site-packages" == os.path.basename(p)
-            and not p.startswith(
-                (venv_dir(system_site_packages_venv_python), venv_dir(standard_venv))
-            )
+            and not p.startswith((venv_dir(system_site_packages_venv), venv_dir(standard_venv)))
         )
     }
     assert len(system_site_packages) == 1, (
@@ -92,7 +87,7 @@ def test_setuptools_isolation_with_system_site_packages(
         # type: (...) -> MutableSet[str]
         result = run_pex_command(
             args=args + ("--", "-c", print_sys_path_code),
-            python=system_site_packages_venv_python,
+            python=system_site_packages_venv.interpreter.binary,
             env=make_env(**env),
         )
         result.assert_success()

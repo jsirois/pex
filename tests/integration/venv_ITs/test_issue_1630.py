@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 def test_data_files(tmpdir):
     # type: (Any) -> None
 
-    py38, pip = ensure_python_venv(PY38)
+    py38_venv = ensure_python_venv(PY38)
+    py38 = py38_venv.interpreter.binary
 
     pex_file = os.path.join(str(tmpdir), "pex.file")
     pex_root = os.path.join(str(tmpdir), "pex_root")
@@ -57,7 +58,9 @@ def test_data_files(tmpdir):
 
     # Check the rest by showing the venv created by Pex has all the same files as that created by
     # Pip.
-    pex_check_call(args=[pip, "install", "--no-deps", "--no-compile", "nbconvert==6.4.2"])
+    pex_check_call(
+        args=[py38_venv.bin_path("pip"), "install", "--no-deps", "--no-compile", "nbconvert==6.4.2"]
+    )
     pex_check_call(args=[py38, "-mpip", "uninstall", "-y", "setuptools", "wheel", "pip"])
     pip_venv = Virtualenv.enclosing(py38)
     assert pip_venv is not None

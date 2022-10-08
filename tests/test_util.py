@@ -138,7 +138,7 @@ def assert_access_zipped_assets(distribution_helper_import):
         )
         stdout, stderr = process.communicate()
         assert process.returncode == 0
-        assert b"accessed\n" == stdout
+        assert b"accessed" == stdout.strip()
         return cast(bytes, stderr)
 
 
@@ -170,10 +170,14 @@ def test_iter_pth_paths(mock_exists):
     with temporary_dir() as tmpdir:
         in_tmp = lambda f: os.path.join(tmpdir, f)
 
+        # N.B.: We abspath paths that are already absolute in a unix system since they are not on a
+        # Windows system. Besides pre-pending C: on Windows, the / are normalized to \ as well.
         PTH_TEST_MAPPING = {
             # A mapping of .pth file content -> expected paths.
             "/System/Library/Frameworks/Python.framework/Versions/2.7/Extras/lib/python\n": [
-                "/System/Library/Frameworks/Python.framework/Versions/2.7/Extras/lib/python"
+                os.path.abspath(
+                    "/System/Library/Frameworks/Python.framework/Versions/2.7/Extras/lib/python"
+                )
             ],
             "relative_path\nrelative_path2\n\nrelative_path3": [
                 in_tmp("relative_path"),
@@ -182,7 +186,7 @@ def test_iter_pth_paths(mock_exists):
             ],
             "duplicate_path\nduplicate_path": [in_tmp("duplicate_path")],
             "randompath\nimport nosuchmodule\n": [in_tmp("randompath")],
-            "import sys\nfoo\n/bar/baz": [in_tmp("foo"), "/bar/baz"],
+            "import sys\nfoo\n/bar/baz": [in_tmp("foo"), os.path.abspath("/bar/baz")],
             "import nosuchmodule\nfoo": [],
             "import nosuchmodule\n": [],
             "import bad)syntax\n": [],

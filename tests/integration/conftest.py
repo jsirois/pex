@@ -88,7 +88,7 @@ def tmp_workdir():
 @pytest.fixture(scope="module")
 def mitmdump():
     # type: () -> Tuple[str, str]
-    python, pip = ensure_python_venv(PY310)
+    python_venv = ensure_python_venv(PY310)
     with open(os.path.join(safe_mkdtemp(), "constraints.txt"), "w") as fp:
         fp.write(
             """\
@@ -128,8 +128,10 @@ def mitmdump():
             zstandard==0.14.1
             """
         )
-    pex_check_call([pip, "install", "mitmproxy==5.3.0", "--constraint", fp.name])
-    mitmdump = os.path.join(os.path.dirname(python), "mitmdump")
+    pex_check_call(
+        [python_venv.bin_path("pip"), "install", "mitmproxy==5.3.0", "--constraint", fp.name]
+    )
+    mitmdump = python_venv.bin_path("mitmdump")
     return mitmdump, os.path.expanduser("~/.mitmproxy/mitmproxy-ca-cert.pem")
 
 

@@ -24,10 +24,10 @@ if TYPE_CHECKING:
 def test_excepthook_scrubbing(tmpdir):
     # type: (Any) -> None
 
-    original_python_installation, original_python, _, _ = ensure_python_distribution(PY310)
+    original_python_distributiuon = ensure_python_distribution(PY310)
 
     custom_python_installation = os.path.join(str(tmpdir), "custom")
-    shutil.copytree(original_python_installation, custom_python_installation)
+    shutil.copytree(original_python_distributiuon.home, custom_python_installation)
     custom_python = os.path.join(custom_python_installation, "bin", "python")
 
     project_dir = os.path.join(str(tmpdir), "custom_excepthook")
@@ -82,7 +82,9 @@ def test_excepthook_scrubbing(tmpdir):
     run_pex_command(args=["pex==2.1.92", "-c", "pex", "--"] + create_pex_args).assert_success()
 
     # A Python installation without the custom excepthook installed via .pth should work just fine.
-    assert "SUCCESS\n" == pex_check_output(args=[original_python, pex]).decode("utf-8")
+    assert "SUCCESS\n" == pex_check_output(args=[original_python_distributiuon.binary, pex]).decode(
+        "utf-8"
+    )
 
     # But with the custom excepthook installed pre-PEX boot, we should reproduce earlier failures.
     process = pex_popen(args=[custom_python, pex], stdout=subprocess.PIPE)

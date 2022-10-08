@@ -19,6 +19,7 @@ from pex.executor import Executor
 from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter
 from pex.jobs import Job
+from pex.os import WINDOWS
 from pex.pyenv import Pyenv
 from pex.sysconfig import script_name
 from pex.testing import (
@@ -221,19 +222,20 @@ class TestPythonInterpreter(object):
 
     def test_pyenv_shims(self, tmpdir):
         # type: (Any) -> None
-        _, py38, _, run_pyenv = ensure_python_distribution(PY38)
+        py38_pyenv_distribution = ensure_python_distribution(PY38)
+        py38 = py38_pyenv_distribution.binary
         py310 = ensure_python_interpreter(PY310)
 
-        pyenv_root = str(run_pyenv(["root"]).strip())
+        pyenv_root = py38_pyenv_distribution.pyenv_root
         pyenv_shims = os.path.join(pyenv_root, "shims")
 
         def pyenv_global(*versions):
             # type: (*str) -> None
-            run_pyenv(["global"] + list(versions))
+            py38_pyenv_distribution.run_pyenv(["global"] + list(versions))
 
         def pyenv_local(*versions):
             # type: (*str) -> None
-            run_pyenv(["local"] + list(versions))
+            py38_pyenv_distribution.run_pyenv(["local"] + list(versions))
 
         @contextmanager
         def pyenv_shell(*versions):
@@ -243,8 +245,9 @@ class TestPythonInterpreter(object):
 
         pex_root = os.path.join(str(tmpdir), "pex_root")
         cwd = safe_mkdir(os.path.join(str(tmpdir), "home", "jake", "project"))
-        with ENV.patch(PEX_ROOT=pex_root) as pex_env, environment_as(
-            PYENV_ROOT=pyenv_root, PEX_PYTHON_PATH=pyenv_shims, **pex_env
+
+        with environment_as(
+            **py38_pyenv_distribution.pyenv_env(PEX_ROOT=pex_root)
         ), pyenv_shell(), pushd(cwd):
             pyenv = Pyenv.find()
             assert pyenv is not None
@@ -252,7 +255,10 @@ class TestPythonInterpreter(object):
 
             def interpreter_for_shim(shim_name):
                 # type: (str) -> PythonInterpreter
-                binary = os.path.join(pyenv_shims, shim_name)
+                binary = os.path.join(
+                    pyenv_shims,
+                    "{shim_name}.bat".format(shim_name=shim_name) if WINDOWS else shim_name,
+                )
                 return PythonInterpreter.from_binary(binary, pyenv=pyenv)
 
             def assert_shim(
@@ -420,13 +426,15 @@ def test_resolve_venv_ambient():
 def test_identify_cwd_isolation_issues_1231(tmpdir):
     # type: (Any) -> None
 
-    python38, pip = ensure_python_venv(PY38)
+    python38_venv = ensure_python_venv(PY38)
     polluted_cwd = os.path.join(str(tmpdir), "dir")
-    pex_check_call(args=[pip, "install", "--target", polluted_cwd, "pex==2.1.16"])
+    pex_check_call(
+        args=[python38_venv.bin_path("pip"), "install", "--target", polluted_cwd, "pex==2.1.16"]
+    )
 
     pex_root = os.path.join(str(tmpdir), "pex_root")
     with pushd(polluted_cwd), ENV.patch(PEX_ROOT=pex_root):
-        interp = PythonInterpreter.from_binary(python38)
+        interp = PythonInterpreter.from_binary(python38_venv.interpreter.binary)
 
     interp_info_files = {
         os.path.join(root, f)
