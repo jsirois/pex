@@ -3,6 +3,7 @@
 
 import glob
 import json
+import operator
 import os
 import re
 import sys
@@ -12,7 +13,7 @@ from textwrap import dedent
 
 import pytest
 
-from pex import fs, interpreter
+from pex import fs, hashing, interpreter
 from pex.common import chmod_plus_x, safe_mkdir, safe_mkdtemp, temporary_dir, touch
 from pex.compatibility import PY3
 from pex.executor import Executor
@@ -21,7 +22,7 @@ from pex.interpreter import PythonInterpreter
 from pex.jobs import Job
 from pex.os import WINDOWS
 from pex.pyenv import Pyenv
-from pex.sysconfig import script_name
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.testing import (
     PY38,
     PY39,
@@ -36,6 +37,7 @@ from pex.testing import (
     pushd,
 )
 from pex.typing import TYPE_CHECKING
+from pex.util import CacheHelper
 from pex.variables import ENV
 
 try:
@@ -58,13 +60,7 @@ class TestPythonInterpreter(object):
     def test_all_does_not_raise_with_empty_path_envvar(self):
         # type: () -> None
         """additionally, tests that the module does not raise at import."""
-        with patch.dict(os.environ, clear=True):
-            if PY3:
-                import importlib
-
-                importlib.reload(interpreter)
-            else:
-                reload(interpreter)
+        with patch.dict(os.environ, clear=True), PythonInterpreter._cleared_memory_cache():
             PythonInterpreter.all()
 
     TEST_INTERPRETER1_VERSION = PY39
@@ -355,8 +351,8 @@ def test_detect_pyvenv(tmpdir):
     with pytest.raises(Executor.NonZeroExit):
         real_interpreter.execute(["-c", "import colors"])
 
-    venv_bin_dir = os.path.join(venv, "bin")
-    pex_check_call([os.path.join(venv_bin_dir, "pip"), "install", "ansicolors==1.1.8"])
+    venv_bin_dir = os.path.join(venv, SCRIPT_DIR)
+    pex_check_call([os.path.join(venv_bin_dir, script_name("pip")), "install", "ansicolors==1.1.8"])
 
     canonical_to_python = defaultdict(set)
     for python in glob.glob(os.path.join(venv_bin_dir, "python*")):
@@ -372,7 +368,10 @@ def test_detect_pyvenv(tmpdir):
     real_python = os.path.realpath(py38)
     assert canonical != real_python
     assert os.path.dirname(canonical) == venv_bin_dir
-    assert os.path.realpath(canonical) == real_python
+    assert (operator.ne if WINDOWS else operator.eq)(os.path.realpath(canonical), real_python), (
+        "On Windows we expect the venv interpreter is a copy of the base interpreter or a stub "
+        "re-director executable and on unix we expect a symlink to the base executable."
+    )
     assert len(pythons) >= 2, "Expected at least two virtualenv python binaries, found: {}".format(
         pythons
     )
@@ -433,7 +432,9 @@ def test_identify_cwd_isolation_issues_1231(tmpdir):
     )
 
     pex_root = os.path.join(str(tmpdir), "pex_root")
-    with pushd(polluted_cwd), ENV.patch(PEX_ROOT=pex_root):
+    with pushd(polluted_cwd), ENV.patch(
+        PEX_ROOT=pex_root
+    ), PythonInterpreter._cleared_memory_cache():
         interp = PythonInterpreter.from_binary(python38_venv.interpreter.binary)
 
     interp_info_files = {
@@ -450,6 +451,11 @@ def test_identify_cwd_isolation_issues_1231(tmpdir):
 @pytest.fixture(scope="module")
 def macos_monterey_interpeter(tmpdir_factory):
     # type: (Any) -> str
+    if WINDOWS:
+        pytest.skip(
+            "Simulating a bogus interpreter on Windows is difficualt since it must be a valid .exe"
+        )
+
     pythonwrapper = os.path.join(str(tmpdir_factory.mktemp("bin")), "pythonwrapper")
     with open(pythonwrapper, "w") as fp:
         fp.write(

@@ -74,7 +74,7 @@ def try_open_file(
     args = []
     url = None
     if "win32" == sys.platform:
-        opener = "cmd"
+        opener = os.environ.get("COMSPEC", "cmd.exe")
         args.append("/C")
     elif "darwin" == sys.platform:
         opener = "open"

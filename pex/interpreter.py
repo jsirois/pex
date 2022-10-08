@@ -14,6 +14,7 @@ import subprocess
 import sys
 import sysconfig
 from collections import OrderedDict
+from contextlib import contextmanager
 
 from pex import third_party
 from pex.common import safe_mkdtemp, safe_rmtree
@@ -380,6 +381,58 @@ class PythonIdentity(object):
         return hash(self._tup())
 
 
+class PyVenvConfig(object):
+    @classmethod
+    def _get_pyvenv_cfg(cls, directory):
+        # type: (str) -> Optional[PyVenvConfig]
+
+        # See: https://www.python.org/dev/peps/pep-0405/#specification
+        pyvenv_cfg_path = os.path.join(directory, "pyvenv.cfg")
+        if os.path.isfile(pyvenv_cfg_path):
+            with open(pyvenv_cfg_path) as fp:
+                for line in fp:
+                    name, _, value = line.partition("=")
+                    if "home" == name.strip():
+                        return cls(home=value.strip())
+        return None
+
+    @classmethod
+    def find(cls, maybe_venv_python_binary):
+        # type: (str) -> Optional[PyVenvConfig]
+
+        # A pyvenv is identified by a pyvenv.cfg file with a home key in one of the two following
+        # directory layouts:
+        #
+        # 1. <venv dir>/
+        #      bin/
+        #        pyvenv.cfg
+        #        python*
+        #
+        # 2. <venv dir>/
+        #      pyvenv.cfg
+        #      bin/
+        #        python*
+        #
+        # In practice, we see layout 2 in the wild, but layout 1 is also allowed by the spec.
+        #
+        # See: # See: https://www.python.org/dev/peps/pep-0405/#specification
+        maybe_venv_bin_dir = os.path.dirname(maybe_venv_python_binary)
+        pyvenv_cfg = cls._get_pyvenv_cfg(maybe_venv_bin_dir)
+        if not pyvenv_cfg:
+            maybe_venv_dir = os.path.dirname(maybe_venv_bin_dir)
+            pyvenv_cfg = cls._get_pyvenv_cfg(maybe_venv_dir)
+        return pyvenv_cfg
+
+    def __init__(self, home):
+        # type: (str) -> None
+        self._home = home
+
+    @property
+    def home(self):
+        # type: () -> str
+        return self._home
+
+
 class PythonInterpreter(object):
     _REGEXEN = (
         # NB: OSX ships python binaries named Python with a capital-P; so we allow for this.
@@ -414,6 +467,20 @@ class PythonInterpreter(object):
 
     _PYTHON_INTERPRETER_BY_NORMALIZED_PATH = {}  # type: Dict
 
+    @classmethod
+    @contextmanager
+    def _cleared_memory_cache(cls):
+        # type: () -> Iterator[None]
+
+        # A method for test use.
+
+        _cache = cls._PYTHON_INTERPRETER_BY_NORMALIZED_PATH.copy()
+        cls._PYTHON_INTERPRETER_BY_NORMALIZED_PATH = {}
+        try:
+            yield
+        finally:
+            cls._PYTHON_INTERPRETER_BY_NORMALIZED_PATH = _cache
+
     @staticmethod
     def _get_pyvenv_cfg(path):
         # type: (str) -> Optional[str]
@@ -429,29 +496,8 @@ class PythonInterpreter(object):
 
     @classmethod
     def _find_pyvenv_cfg(cls, maybe_venv_python_binary):
-        # type: (str) -> Optional[str]
-        # A pyvenv is identified by a pyvenv.cfg file with a home key in one of the two following
-        # directory layouts:
-        #
-        # 1. <venv dir>/
-        #      bin/
-        #        pyvenv.cfg
-        #        python*
-        #
-        # 2. <venv dir>/
-        #      pyvenv.cfg
-        #      bin/
-        #        python*
-        #
-        # In practice, we see layout 2 in the wild, but layout 1 is also allowed by the spec.
-        #
-        # See: # See: https://www.python.org/dev/peps/pep-0405/#specification
-        maybe_venv_bin_dir = os.path.dirname(maybe_venv_python_binary)
-        pyvenv_cfg = cls._get_pyvenv_cfg(maybe_venv_bin_dir)
-        if not pyvenv_cfg:
-            maybe_venv_dir = os.path.dirname(maybe_venv_bin_dir)
-            pyvenv_cfg = cls._get_pyvenv_cfg(maybe_venv_dir)
-        return pyvenv_cfg
+        # type: (str) -> Optional[PyVenvConfig]
+        return PyVenvConfig.find(maybe_venv_python_binary)
 
     @classmethod
     def _resolve_pyvenv_canonical_python_binary(
@@ -459,14 +505,26 @@ class PythonInterpreter(object):
         real_binary,  # type: str
         maybe_venv_python_binary,  # type: str
     ):
-        # type: (...) -> Optional[str]
+        # type: (...) -> str
         maybe_venv_python_binary = os.path.abspath(maybe_venv_python_binary)
-        if not os.path.islink(maybe_venv_python_binary):
-            return None
 
-        pyvenv_cfg = cls._find_pyvenv_cfg(maybe_venv_python_binary)
+        if WINDOWS:
+            # As an arbitrary choice, we pick "python.exe" as the canonical interpreter when
+            # possible.
+            canonical_binary_name = script_name("python")
+            if canonical_binary_name == os.path.basename(real_binary):
+                return real_binary
+            canonical_binary_path = os.path.join(
+                os.path.dirname(real_binary), canonical_binary_name
+            )
+            return canonical_binary_path if is_exe(canonical_binary_path) else real_binary
+
+        if not os.path.islink(maybe_venv_python_binary):
+            return real_binary
+
+        pyvenv_cfg = PyVenvConfig.find(maybe_venv_python_binary)
         if pyvenv_cfg is None:
-            return None
+            return real_binary
 
         while os.path.islink(maybe_venv_python_binary):
             resolved = os.readlink(maybe_venv_python_binary)
@@ -506,11 +564,8 @@ class PythonInterpreter(object):
 
         # If the path is a PEP-405 venv interpreter symlink we do not want to resolve outside of the
         # venv in order to stay faithful to the binary path choice.
-        return (
-            cls._resolve_pyvenv_canonical_python_binary(
-                real_binary=real_binary, maybe_venv_python_binary=path
-            )
-            or real_binary
+        return cls._resolve_pyvenv_canonical_python_binary(
+            real_binary=real_binary, maybe_venv_python_binary=path
         )
 
     class Error(Exception):
@@ -544,7 +599,9 @@ class PythonInterpreter(object):
     def _paths(paths=None):
         # type: (Optional[Iterable[str]]) -> Iterable[str]
         # NB: If `paths=[]`, we will not read $PATH.
-        return OrderedSet(paths if paths is not None else os.getenv("PATH", "").split(os.pathsep))
+        return OrderedSet(
+            paths if paths is not None else os.getenv("PATH", os.path.defpath).split(os.pathsep)
+        )
 
     @classmethod
     def iter(cls, paths=None):
