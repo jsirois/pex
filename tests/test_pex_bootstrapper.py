@@ -15,6 +15,7 @@ from pex.interpreter_constraints import (
     InterpreterConstraints,
     UnsatisfiableInterpreterConstraintsError,
 )
+from pex.os import WINDOWS
 from pex.pex import PEX
 from pex.pex_bootstrapper import (
     InterpreterTest,
@@ -227,10 +228,37 @@ def test_ensure_venv_activate_issues_1276(tmpdir):
         .decode("utf-8")
         .strip()
     )
-    bash_activate = venv_pex.bin_file("activate")
 
-    pex_check_call(
-        args=[
+    if WINDOWS:
+        batch_activate = venv_pex.bin_file("activate.bat")
+        with open(os.path.join(str(tmpdir), "test.bat"), "w") as fp:
+            fp.write(
+                dedent(
+                    """\
+                    @echo off
+
+                    "{activate_script}"
+
+                    for /f "usebackq tokens=*" %%a in (
+                        `python -c "import os, sys; print(os.path.dirname(sys.executable))"`
+                    ) do set actual_python_bin_dir=%%a
+                    set expected_python_bin_dir="{expected_python_bin_dir}"
+
+                    if not "%actual_python_bin_dir%" == "%expected_python_bin_dir%" (
+                        echo Actual Python Bin Dir: %actual_python_bin_dir%>&2
+                        echo Expected Python Bin Dir: %expected_python_bin_dir%>&2
+                        exit 42
+                    )
+                    """.format(
+                        activate_script=batch_activate,
+                        expected_python_bin_dir=expected_python_bin_dir,
+                    )
+                )
+            )
+        args = [fp.name]
+    else:
+        bash_activate = venv_pex.bin_file("activate")
+        args = [
             "/usr/bin/env",
             "bash",
             "-c",
@@ -244,14 +272,14 @@ def test_ensure_venv_activate_issues_1276(tmpdir):
                 if [ "${{actual_python_bin_dir}}" != "${{expected_python_bin_dir}}" ]; then
                     echo >&2 "Actual Python Bin Dir: ${{actual_python_bin_dir}}"
                     echo >&2 "Expected Python Bin Dir: ${{expected_python_bin_dir}}"
-                  exit 42
+                    exit 42
                 fi
                 """.format(
                     activate_script=bash_activate, expected_python_bin_dir=expected_python_bin_dir
                 )
             ),
         ]
-    )
+    pex_check_call(args)
 
 
 def test_pp_invalid():
