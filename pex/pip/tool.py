@@ -408,6 +408,44 @@ class Pip(object):
         preserve_log=False,  # type: bool
     ):
         # type: (...) -> Job
+        base_command = ["download", "--dest", download_dir]
+        return self._spawn_resolve_job(
+            base_command=base_command,
+            requirements=requirements,
+            requirement_files=requirement_files,
+            constraint_files=constraint_files,
+            allow_prereleases=allow_prereleases,
+            transitive=transitive,
+            target=target,
+            package_index_configuration=package_index_configuration,
+            build=build,
+            use_wheel=use_wheel,
+            prefer_older_binary=prefer_older_binary,
+            use_pep517=use_pep517,
+            build_isolation=build_isolation,
+            observer=observer,
+            preserve_log=preserve_log,
+        )
+
+    def _spawn_resolve_job(
+        self,
+        base_command,  # type: List[str]
+        requirements=None,  # type: Optional[Iterable[str]]
+        requirement_files=None,  # type: Optional[Iterable[str]]
+        constraint_files=None,  # type: Optional[Iterable[str]]
+        allow_prereleases=False,  # type: bool
+        transitive=True,  # type: bool
+        target=None,  # type: Optional[Target]
+        package_index_configuration=None,  # type: Optional[PackageIndexConfiguration]
+        build=True,  # type: bool
+        use_wheel=True,  # type: bool
+        prefer_older_binary=False,  # type: bool
+        use_pep517=None,  # type: Optional[bool]
+        build_isolation=True,  # type: bool
+        observer=None,  # type: Optional[DownloadObserver]
+        preserve_log=False,  # type: bool
+    ):
+        # type: (...) -> Job
         target = target or targets.current()
 
         if not use_wheel:
@@ -422,42 +460,41 @@ class Pip(object):
                     "{}".format(target.platform)
                 )
 
-        download_cmd = ["download", "--dest", download_dir]
         extra_env = {}  # type: Dict[str, str]
 
         if not isinstance(target, LocalInterpreter) or not build:
             # If we're not targeting a local interpreter, we can't build wheels from sdists.
-            download_cmd.extend(["--only-binary", ":all:"])
+            base_command.extend(["--only-binary", ":all:"])
 
         if not use_wheel:
-            download_cmd.extend(["--no-binary", ":all:"])
+            base_command.extend(["--no-binary", ":all:"])
 
         if prefer_older_binary:
-            download_cmd.append("--prefer-binary")
+            base_command.append("--prefer-binary")
 
         if use_pep517 is not None:
-            download_cmd.append("--use-pep517" if use_pep517 else "--no-use-pep517")
+            base_command.append("--use-pep517" if use_pep517 else "--no-use-pep517")
 
         if not build_isolation:
-            download_cmd.append("--no-build-isolation")
+            base_command.append("--no-build-isolation")
             extra_env.update(PEP517_BACKEND_PATH=os.pathsep.join(sys.path))
 
         if allow_prereleases:
-            download_cmd.append("--pre")
+            base_command.append("--pre")
 
         if not transitive:
-            download_cmd.append("--no-deps")
+            base_command.append("--no-deps")
 
         if requirement_files:
             for requirement_file in requirement_files:
-                download_cmd.extend(["--requirement", requirement_file])
+                base_command.extend(["--requirement", requirement_file])
 
         if constraint_files:
             for constraint_file in constraint_files:
-                download_cmd.extend(["--constraint", constraint_file])
+                base_command.extend(["--constraint", constraint_file])
 
         if requirements:
-            download_cmd.extend(requirements)
+            base_command.extend(requirements)
 
         foreign_platform_observer = foreign_platform.patch(target)
         if (
@@ -476,7 +513,7 @@ class Pip(object):
         for obs in (foreign_platform_observer, observer):
             if obs:
                 log_analyzers.append(obs.analyzer)
-                download_cmd.extend(obs.patch.args)
+                base_command.extend(obs.patch.args)
                 extra_env.update(obs.patch.env)
                 code = code or obs.patch.code
 
@@ -508,7 +545,7 @@ class Pip(object):
                     V=ENV.PEX_VERBOSE,
                 )
 
-            download_cmd = ["--log", log] + download_cmd
+            base_command = ["--log", log] + base_command
             # N.B.: The `pip -q download ...` command is quiet but
             # `pip -q --log log.txt download ...` leaks download progress bars to stdout. We work
             # around this by sending stdout to the bit bucket.
@@ -546,7 +583,7 @@ class Pip(object):
             )
 
         command, process = self._spawn_pip_isolated(
-            download_cmd,
+            base_command,
             package_index_configuration=package_index_configuration,
             interpreter=target.get_interpreter(),
             pip_verbosity=0,

@@ -433,6 +433,7 @@ def lock_via_install(
             for installed_distribution in installed_by_target[target]
         ]
         # TODO(John Sirois): XXX: Support GC'ing these ~1-off Pip venvs.
+        #  pip._pip_pex.venv_dir
         pip = get_pip(
             interpreter=target.get_interpreter(),
             version=pip_configuration.version,
@@ -440,6 +441,7 @@ def lock_via_install(
             extra_distribution_locations=extra_distribution_locations,
         )
         # TODO(John Sirois): XXX: Need a new pip method to implement install based resolves /
-        #  observations.
+        #  observations. The existing spawn_download_distributions looks like it might work with:
+        #  s/download_cmd = ["download", "--dest", download_dir]/install_cmd = ["install"]
         # pip.spawn_install()
     return ()
