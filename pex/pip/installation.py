@@ -22,7 +22,7 @@ from pex.util import named_temporary_file
 from pex.variables import ENV
 
 if TYPE_CHECKING:
-    from typing import Callable, Dict, Iterator, Optional
+    from typing import Callable, Dict, Iterable, Iterator, Optional, Tuple
 
     import attr  # vendor:skip
 else:
@@ -69,12 +69,22 @@ def _pip_venv(
     return ensure_venv(PEX(pip_pex_path, interpreter=pip_interpreter))
 
 
-def _vendored_installation(interpreter=None):
-    # type: (Optional[PythonInterpreter]) -> VenvPex
+def _vendored_installation(
+    interpreter=None,  # type: Optional[PythonInterpreter]
+    extra_distribution_locations=(),  # type: Tuple[str, ...]
+):
+    # type: (...) -> VenvPex
+
+    def iter_distribution_locations():
+        # type: () -> Iterator[str]
+        for location in third_party.expose(("pip", "setuptools", "wheel")):
+            yield location
+        for location in extra_distribution_locations:
+            yield location
 
     return _pip_venv(
         version=PipVersion.VENDORED,
-        iter_distribution_locations=lambda: third_party.expose(("pip", "setuptools", "wheel")),
+        iter_distribution_locations=iter_distribution_locations,
         interpreter=interpreter,
     )
 
@@ -83,6 +93,7 @@ def _resolved_installation(
     version,  # type: PipVersionValue
     resolver,  # type: Resolver
     interpreter=None,  # type: Optional[PythonInterpreter]
+    extra_distribution_locations=(),  # type: Tuple[str, ...]
 ):
     # type: (...) -> VenvPex
     if version is PipVersion.VENDORED:
@@ -95,6 +106,8 @@ def _resolved_installation(
             pip_version=PipVersion.VENDORED,
         ).installed_distributions:
             yield installed_distribution.distribution.location
+        for location in extra_distribution_locations:
+            yield location
 
     return _pip_venv(
         version=version,
@@ -107,6 +120,7 @@ def _resolved_installation(
 class PipInstallation(object):
     interpreter = attr.ib()  # type: PythonInterpreter
     version = attr.ib()  # type: PipVersionValue
+    extra_distribution_locations = attr.ib(default=())  # type: Tuple[str, ...]
 
     def check_python_applies(self):
         # type: () -> None
@@ -193,18 +207,27 @@ def get_pip(
     interpreter=None,
     version=PipVersion.VENDORED,  # type: PipVersionValue
     resolver=None,  # type: Optional[Resolver]
+    extra_distribution_locations=None,  # type: Optional[Iterable[str]]
 ):
     # type: (...) -> Pip
     """Returns a lazily instantiated global Pip object that is safe for un-coordinated use."""
     installation = PipInstallation(
         interpreter=interpreter or PythonInterpreter.get(),
         version=version,
+        extra_distribution_locations=tuple(extra_distribution_locations)
+        if extra_distribution_locations
+        else (),
     )
     pip = _PIP.get(installation)
     if pip is None:
         installation.check_python_applies()
         if version is PipVersion.VENDORED:
-            pip = Pip(pip_pex=_vendored_installation(interpreter=interpreter))
+            pip = Pip(
+                pip_pex=_vendored_installation(
+                    interpreter=interpreter,
+                    extra_distribution_locations=installation.extra_distribution_locations,
+                )
+            )
         else:
             if resolver is None:
                 raise ValueError(
@@ -217,6 +240,7 @@ def get_pip(
                     version=version,
                     resolver=resolver,
                     interpreter=interpreter,
+                    extra_distribution_locations=installation.extra_distribution_locations,
                 )
             )
         _PIP[installation] = pip

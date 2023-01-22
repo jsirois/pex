@@ -16,6 +16,7 @@ from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
 from pex.pep_503 import ProjectName
 from pex.pip.download_observer import DownloadObserver
+from pex.pip.installation import get_pip
 from pex.pip.tool import PackageIndexConfiguration
 from pex.resolve import lock_resolver, locker, resolvers
 from pex.resolve.configured_resolver import ConfiguredResolver
@@ -36,7 +37,7 @@ from pex.resolve.pep_691.fingerprint_service import FingerprintService
 from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Pin, ResolvedRequirement
 from pex.resolve.resolver_configuration import PipConfiguration
-from pex.resolve.resolvers import Resolver
+from pex.resolve.resolvers import InstalledDistribution, Resolver
 from pex.resolver import BuildRequest, Downloaded, LocalDistribution, ResolveObserver, WheelBuilder
 from pex.result import Error, try_
 from pex.targets import Target, Targets
@@ -45,7 +46,7 @@ from pex.typing import TYPE_CHECKING
 from pex.version import __version__
 
 if TYPE_CHECKING:
-    from typing import DefaultDict, Dict, Iterable, Mapping, Optional, Tuple, Union
+    from typing import DefaultDict, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
     import attr  # vendor:skip
 
@@ -417,4 +418,28 @@ def lock_via_install(
     baseline,  # type: Lockfile
 ):
     # type: (...) -> Tuple[LockedResolve, ...]
+    installed = configured_resolver.resolve_lock(
+        lock=baseline, targets=lock_targets, pip_version=pip_configuration.version
+    )
+    installed_by_target = defaultdict(
+        list
+    )  # type: DefaultDict[Target, List[InstalledDistribution]]
+    for installed_distribution in installed.installed_distributions:
+        installed_by_target[installed_distribution.target].append(installed_distribution)
+
+    for target in lock_targets.unique_targets():
+        extra_distribution_locations = [
+            installed_distribution.distribution.location
+            for installed_distribution in installed_by_target[target]
+        ]
+        # TODO(John Sirois): XXX: Support GC'ing these ~1-off Pip venvs.
+        pip = get_pip(
+            interpreter=target.get_interpreter(),
+            version=pip_configuration.version,
+            resolver=configured_resolver,
+            extra_distribution_locations=extra_distribution_locations,
+        )
+        # TODO(John Sirois): XXX: Need a new pip method to implement install based resolves /
+        #  observations.
+        # pip.spawn_install()
     return ()
