@@ -12,6 +12,7 @@ from pex.auth import PasswordDatabase
 from pex.common import pluralize, safe_mkdtemp
 from pex.dist_metadata import DistMetadata, ProjectNameAndVersion
 from pex.fetcher import URLFetcher
+from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
 from pex.pep_503 import ProjectName
 from pex.pip.download_observer import DownloadObserver
@@ -36,7 +37,7 @@ from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Pin, ResolvedRequirement
 from pex.resolve.resolver_configuration import PipConfiguration
 from pex.resolve.resolvers import Resolver
-from pex.resolver import BuildRequest, Downloaded, ResolveObserver, WheelBuilder
+from pex.resolver import BuildRequest, Downloaded, LocalDistribution, ResolveObserver, WheelBuilder
 from pex.result import Error, try_
 from pex.targets import Target, Targets
 from pex.tracer import TRACER
@@ -163,15 +164,15 @@ class LockObserver(ResolveObserver):
         )
         return patch
 
-    def lock(self, downloaded):
-        # type: (Downloaded) -> Tuple[LockedResolve, ...]
+    def lock(self, local_distributions):
+        # type: (Iterable[LocalDistribution]) -> Tuple[LockedResolve, ...]
 
         dist_metadatas_by_target = defaultdict(
             OrderedSet
         )  # type: DefaultDict[Target, OrderedSet[DistMetadata]]
         build_requests = OrderedSet()  # type: OrderedSet[BuildRequest]
 
-        for local_distribution in downloaded.local_distributions:
+        for local_distribution in local_distributions:
             if local_distribution.is_wheel:
                 dist_metadatas_by_target[local_distribution.target].add(
                     DistMetadata.load(local_distribution.path)
@@ -232,6 +233,7 @@ def create(
     requirement_configuration,  # type: RequirementConfiguration
     targets,  # type: Targets
     pip_configuration,  # type: PipConfiguration
+    baseline=None,  # type Optional[Lockfile]
 ):
     # type: (...) -> Union[Lockfile, Error]
     """Create a lock file for the given resolve configurations."""
@@ -271,51 +273,36 @@ def create(
         max_parallel_jobs=pip_configuration.max_jobs,
     )
 
-    download_dir = safe_mkdtemp()
-
     if lock_configuration.style is LockStyle.UNIVERSAL:
-        download_targets = (
+        lock_targets = (
             Targets(interpreters=(targets.interpreter,)) if targets.interpreter else Targets()
         )
     else:
-        download_targets = targets
+        lock_targets = targets
 
     try:
-        downloaded = resolver.download(
-            targets=download_targets,
-            requirements=requirement_configuration.requirements,
-            requirement_files=requirement_configuration.requirement_files,
-            constraint_files=requirement_configuration.constraint_files,
-            allow_prereleases=pip_configuration.allow_prereleases,
-            transitive=pip_configuration.transitive,
-            indexes=pip_configuration.repos_configuration.indexes,
-            find_links=pip_configuration.repos_configuration.find_links,
-            resolver_version=pip_configuration.resolver_version,
-            network_configuration=network_configuration,
-            password_entries=pip_configuration.repos_configuration.password_entries,
-            build=pip_configuration.allow_builds,
-            use_wheel=pip_configuration.allow_wheels,
-            prefer_older_binary=pip_configuration.prefer_older_binary,
-            use_pep517=pip_configuration.use_pep517,
-            build_isolation=pip_configuration.build_isolation,
-            max_parallel_jobs=pip_configuration.max_jobs,
-            observer=lock_observer,
-            dest=download_dir,
-            preserve_log=pip_configuration.preserve_log,
-            pip_version=pip_configuration.version,
-            resolver=configured_resolver,
+        locked_resolves = (
+            lock_via_install(
+                configured_resolver,
+                lock_targets,
+                lock_observer,
+                network_configuration,
+                pip_configuration,
+                requirement_configuration,
+                baseline,
+            )
+            if baseline
+            else lock_via_download(
+                configured_resolver,
+                lock_targets,
+                lock_observer,
+                network_configuration,
+                pip_configuration,
+                requirement_configuration,
+            )
         )
     except resolvers.ResolveError as e:
         return Error(str(e))
-
-    with TRACER.timed("Creating lock from resolve"):
-        locked_resolves = lock_observer.lock(downloaded)
-
-    with TRACER.timed("Indexing downloads"):
-        create_lock_download_manager = CreateLockDownloadManager.create(
-            download_dir=download_dir, locked_resolves=locked_resolves
-        )
-        create_lock_download_manager.store_all()
 
     lock = Lockfile.create(
         pex_version=__version__,
@@ -369,3 +356,65 @@ def create(
             )
 
     return lock
+
+
+def lock_via_download(
+    configured_resolver,  # type: Resolver
+    lock_targets,  # type: Targets
+    lock_observer,  # type: LockObserver
+    network_configuration,  # type: NetworkConfiguration
+    pip_configuration,  # type: PipConfiguration
+    requirement_configuration,  # type: RequirementConfiguration
+):
+    # type: (...) -> Tuple[LockedResolve, ...]
+
+    download_dir = safe_mkdtemp()
+
+    downloaded = resolver.download(
+        targets=lock_targets,
+        requirements=requirement_configuration.requirements,
+        requirement_files=requirement_configuration.requirement_files,
+        constraint_files=requirement_configuration.constraint_files,
+        allow_prereleases=pip_configuration.allow_prereleases,
+        transitive=pip_configuration.transitive,
+        indexes=pip_configuration.repos_configuration.indexes,
+        find_links=pip_configuration.repos_configuration.find_links,
+        resolver_version=pip_configuration.resolver_version,
+        network_configuration=network_configuration,
+        password_entries=pip_configuration.repos_configuration.password_entries,
+        build=pip_configuration.allow_builds,
+        use_wheel=pip_configuration.allow_wheels,
+        prefer_older_binary=pip_configuration.prefer_older_binary,
+        use_pep517=pip_configuration.use_pep517,
+        build_isolation=pip_configuration.build_isolation,
+        max_parallel_jobs=pip_configuration.max_jobs,
+        observer=lock_observer,
+        dest=download_dir,
+        preserve_log=pip_configuration.preserve_log,
+        pip_version=pip_configuration.version,
+        resolver=configured_resolver,
+    )
+
+    with TRACER.timed("Creating lock from resolve"):
+        locked_resolves = lock_observer.lock(downloaded.local_distributions)
+
+    with TRACER.timed("Indexing downloads"):
+        create_lock_download_manager = CreateLockDownloadManager.create(
+            download_dir=download_dir, locked_resolves=locked_resolves
+        )
+        create_lock_download_manager.store_all()
+
+    return locked_resolves
+
+
+def lock_via_install(
+    configured_resolver,  # type: Resolver
+    lock_targets,  # type: Targets
+    lock_observer,  # type: LockObserver
+    network_configuration,  # type: NetworkConfiguration
+    pip_configuration,  # type: PipConfiguration
+    requirement_configuration,  # type: RequirementConfiguration
+    baseline,  # type: Lockfile
+):
+    # type: (...) -> Tuple[LockedResolve, ...]
+    return ()
