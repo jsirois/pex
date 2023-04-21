@@ -8,8 +8,10 @@ import logging
 import os
 from argparse import ArgumentParser
 
+from pex import pex_warnings
 from pex.common import safe_delete, safe_rmtree
 from pex.enum import Enum
+from pex.executor import Executor
 from pex.pex import PEX
 from pex.result import Error, Ok, Result
 from pex.tools.command import PEXCommand
@@ -164,6 +166,16 @@ class Venv(PEXCommand):
                 )
             ),
         )
+        parser.add_argument(
+            "--non-hermetic-scripts",
+            dest="hermetic_scripts",
+            action="store_false",
+            default=True,
+            help=(
+                "Don't rewrite console script shebangs in the venv to pass `-sE` to the interpreter; "
+                "for example, to enable running venv scripts with a custom `PYTHONPATH`."
+            ),
+        )
         cls.register_global_arguments(parser, include_verbosity=False)
 
     def run(self, pex):
@@ -196,6 +208,7 @@ class Venv(PEXCommand):
             collisions_ok=self.options.collisions_ok,
             symlink=False,
             scope=self.options.scope,
+            hermetic_scripts=self.options.hermetic_scripts,
         )
         if self.options.pip:
             try:
@@ -206,7 +219,11 @@ class Venv(PEXCommand):
                     "installed:\n{}".format(e)
                 )
         if self.options.compile:
-            pex.interpreter.execute(["-m", "compileall", venv_dir])
+            try:
+                pex.interpreter.execute(["-m", "compileall", venv_dir])
+            except Executor.NonZeroExit as non_zero_exit:
+                pex_warnings.warn("ignoring compile error {}".format(repr(non_zero_exit)))
+
         if self.options.remove is not None:
             if os.path.isdir(pex.path()):
                 safe_rmtree(pex.path())

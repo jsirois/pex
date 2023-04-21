@@ -1,6 +1,86 @@
 Release Notes
 =============
 
+2.1.119
+-------
+
+This release brings two new features. The venv pex tool now just warns when
+using ``--compile`` and there is a ``*.pyc`` compile error instead of failing
+to create the venv. Also, a new ``PEX_DISABLE_VARIABLES`` env var knob is added
+to turn off reading all ``PEX_*`` env vars from the environment.
+
+* Ignore compile error for PEX_TOOLS=1 (#2002)
+  `PR #2002 <https://github.com/pantsbuild/pex/pull/2002>`_
+
+* Add PEX_DISABLE_VARIABLES to lock down a PEX run. (#2014)
+  `PR #2014 <https://github.com/pantsbuild/pex/pull/2014>`_
+
+2.1.118
+-------
+
+This is a very tardy hotfix release for a regression introduced in Pex
+2.1.91 by #1785 that replaced sys.argv[0] with its fully resolved path.
+This prevented introspecting the actual file path used to launch the PEX
+which broke BusyBox-alike use cases.
+
+There is also a new ``--non-hermetic-scripts`` option accepted by the
+``venv`` tool to allow running console scripts with ``PYTHONPATH``
+adjustments to the ``sys.path``.
+
+* Remove un-needed realpathing of ``sys.argv[0]``. (#2007)
+  `PR #2007 <https://github.com/pantsbuild/pex/pull/2007>`_
+
+* Add ``--non-hermetic-scripts`` option to ``venv`` tool. (#2010)
+  `PR #2010 <https://github.com/pantsbuild/pex/pull/2010>`_
+
+2.1.117
+-------
+
+This release fixes a bug introduced in Pex 2.1.109 where the released
+Pex PEX could not be executed by PyPy interpreters. More generally, any
+PEX created with interpreter constraints that did not specify the Python
+implementation, e.g.: ``==3.8.*``, were interpreted as being CPython
+specific, i.e.: ``CPython==3.8.*``. This is now fixed, but if the
+intention of a constraint like ``==3.8.*`` was in fact to restrict to
+CPython only, interpreter constraints need to say so now and use
+``CPython==3.8.*`` explicitly.
+
+* Fix interpreter constraint parsing. (#1998)
+  `PR #1998 <https://github.com/pantsbuild/pex/pull/1998>`_
+
+2.1.116
+-------
+
+This release fixes a bug in ``--resolve-local-platforms`` when
+``--complete-platform`` was used.
+
+* Check for --complete-platforms match when --resolve-local-platforms (#1991)
+  `PR #1991 <https://github.com/pantsbuild/pex/pull/1991>`_
+
+2.1.115
+-------
+
+This release brings some attention to the ``pex3 lock export``
+subcommand to make it more useful when inter-operating with
+``pip-tools``.
+
+* Sort requirements based on normalized project name when exporting (#1992)
+  `PR #1992 <https://github.com/pantsbuild/pex/pull/1992>`_
+
+* Use raw version when exporting (#1990)
+  `PR #1990 <https://github.com/pantsbuild/pex/pull/1990>`_
+
+2.1.114
+-------
+
+This release brings two fixes for ``--venv`` mode PEXes.
+
+* Only insert "" to head of sys.path if a venv PEX runs in interpreter mode (#1984)
+  `PR #1984 <https://github.com/pantsbuild/pex/pull/1984>`_
+
+* Map pex python path interpreter to realpath when creating venv dir hash. (#1972)
+  `PR #1972 <https://github.com/pantsbuild/pex/pull/1972>`_
+
 2.1.113
 -------
 

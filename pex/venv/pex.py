@@ -109,6 +109,7 @@ def populate_venv(
     collisions_ok=True,  # type: bool
     symlink=False,  # type: bool
     scope=InstallScope.ALL,  # type: InstallScope.Value
+    hermetic_scripts=True,  # type: bool
 ):
     # type: (...) -> str
 
@@ -126,7 +127,7 @@ def populate_venv(
             provenance[dst].append(src)
 
     if scope in (InstallScope.ALL, InstallScope.DEPS_ONLY):
-        record_provenance(_populate_deps(venv, pex, venv_python, symlink))
+        record_provenance(_populate_deps(venv, pex, venv_python, symlink, hermetic_scripts))
 
     if scope in (InstallScope.ALL, InstallScope.SOURCE_ONLY):
         record_provenance(_populate_sources(venv, pex, shebang, venv_python, bin_path))
@@ -204,6 +205,7 @@ def _populate_deps(
     pex,  # type: PEX
     venv_python,  # type: str
     symlink=False,  # type: bool
+    hermetic_scripts=True,  # type: bool
 ):
     # type: (...) -> Iterator[Tuple[str, str]]
 
@@ -283,7 +285,8 @@ def _populate_deps(
                     print(rel_extra_path, file=fp)
 
     # 3. Re-write any (console) scripts to use the venv Python.
-    for script in venv.rewrite_scripts(python=venv_python, python_args="-sE"):
+    script_python_args = "-sE" if hermetic_scripts else None
+    for script in venv.rewrite_scripts(python=venv_python, python_args=script_python_args):
         TRACER.log("Re-writing {}".format(script))
 
 
@@ -466,9 +469,6 @@ def _populate_sources(
 
             os.environ["VIRTUAL_ENV"] = venv_dir
 
-            # A Python interpreter always inserts the CWD at the head of the sys.path.
-            sys.path.insert(0, "")
-
             bin_path = os.environ.get("PEX_VENV_BIN_PATH", {bin_path!r})
             if bin_path != "false":
                 PATH = os.environ.get("PATH", "").split(os.pathsep)
@@ -524,6 +524,12 @@ def _populate_sources(
                 if pex_interpreter
                 else pex_overrides.get("PEX_MODULE", {entry_point!r} or PEX_INTERPRETER_ENTRYPOINT)
             )
+
+            if entry_point == PEX_INTERPRETER_ENTRYPOINT:
+                # A Python interpreter always inserts the CWD at the head of the sys.path.
+                # See https://docs.python.org/3/library/sys.html#sys.path
+                sys.path.insert(0, "")
+
             if entry_point == PEX_INTERPRETER_ENTRYPOINT and len(sys.argv) > 1:
                 args = sys.argv[1:]
 

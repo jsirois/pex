@@ -137,7 +137,7 @@ if __entry_point__ is None:
   sys.exit(2)
 
 __installed_from__ = os.environ.pop(__INSTALLED_FROM__, None)
-sys.argv[0] = os.path.realpath(__installed_from__ or sys.argv[0])
+sys.argv[0] = __installed_from__ or sys.argv[0]
 
 sys.path[0] = os.path.realpath(sys.path[0])
 
