@@ -4,6 +4,7 @@
 from __future__ import absolute_import, print_function
 
 import functools
+import itertools
 import json
 import os
 import re
@@ -86,10 +87,15 @@ def assert_installed_wheels(label, pex_root):
 
 def assert_empty_home_dir(home_dir):
     # type: (str) -> None
-    assert os.listdir(home_dir) in ([], [".rustup"]), (
+    pip_cache_dir = "Library" if IS_MAC else ".cache"
+    rust_cache_dir = ".rustup"
+    home_dir_contents = [
+        path for path in os.listdir(home_dir) if path not in (pip_cache_dir, rust_cache_dir)
+    ]
+    assert [] == home_dir_contents, (
         "Expected ~empty home dir (Modern Pip attempts to run rustc --version to fill in "
         "User-Agent data re available local compiler toolchains and this can leave a .rustup "
-        "dir in HOME.).\n"
+        "dir in HOME. Even newer Pips also write cache entries as well).\n"
         "Found:\n{items}".format(items="\n".join(os.listdir(home_dir)))
     )
 

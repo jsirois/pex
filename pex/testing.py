@@ -590,13 +590,11 @@ def ensure_python_distribution(version):
 
     pip = os.path.join(interpreter_location, SCRIPT_DIR, script_name("pip"))
 
-    with atomic_directory(target_dir=clone_dir, exclusive=True) as atomic_dir:
+    with atomic_directory(target_dir=clone_dir) as atomic_dir:
         if not atomic_dir.is_finalized():
             bootstrap_python_installer(atomic_dir.work_dir)
 
-    with atomic_directory(
-        target_dir=interpreter_location, exclusive=True
-    ) as interpreter_target_dir:
+    with atomic_directory(target_dir=interpreter_location) as interpreter_target_dir:
         if not interpreter_target_dir.is_finalized():
             pex_check_call(
                 [

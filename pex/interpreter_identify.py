@@ -18,7 +18,7 @@ def identify(
 ):
     # type: (...) -> None
     encoded_identity = PythonIdentity.get(binary=binary).encode()
-    with atomic_directory(cache_dir, exclusive=False) as atomic_dir:
+    with atomic_directory(cache_dir) as atomic_dir:
         if not atomic_dir.is_finalized():
             with safe_open(
                 os.path.join(atomic_dir.work_dir, PythonInterpreter.INTERP_INFO_FILE), "w"
