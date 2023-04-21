@@ -2,6 +2,7 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 import os.path
 import sys
+import sysconfig
 from textwrap import dedent
 from typing import Text
 
@@ -9,11 +10,12 @@ import pytest
 
 from pex import variables
 from pex.common import safe_open
+from pex.compatibility import commonpath
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.os import WINDOWS
 from pex.pex_info import PexInfo
-from pex.testing import pex_check_output, pex_popen, run_pex_command
+from pex.testing import IS_MAC, pex_check_output, pex_popen, run_pex_command
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -89,10 +91,33 @@ def test_setproctitle(
 
     def assert_expected_python(exe):
         # type: (Text) -> None
-        assert (
-            PythonInterpreter.get().resolve_base_interpreter()
-            == PythonInterpreter.from_binary(str(exe)).resolve_base_interpreter()
-        )
+        expected = PythonInterpreter.get().resolve_base_interpreter()
+        actual = PythonInterpreter.from_binary(str(exe)).resolve_base_interpreter()
+        python_framework = sysconfig.get_config_var("PYTHONFRAMEWORKINSTALLDIR")
+        if IS_MAC and expected != actual and python_framework:
+            # Mac framework Python distributions have two Python binaries (starred) as well as
+            # several symlinks. The layout looks like so:
+            #   /Library/Frameworks/
+            #       Python.framework/  # sysconfig.get_config_var("PYTHONFRAMEWORKINSTALLDIR")
+            #           Versions/X.Y/  # sys.prefix
+            #               bin/
+            #                   python -> pythonX.Y
+            #                   pythonX -> pythonX.Y
+            #                   *pythonX.Y
+            #           Resources/Python.app/
+            #               Contents/MacOS/
+            #                   *Python
+            #
+            # In some versions of Python, the bin Python, when executed, gets a sys.executable of
+            # the corresponding Python resource. On others, they each retain a sys.executable
+            # faithful to their launcher file path. It's the latter type we're working around here.
+            assert python_framework == commonpath(
+                (python_framework, expected.binary, actual.binary)
+            )
+            assert expected.prefix == actual.prefix
+            assert expected.version == actual.version
+        else:
+            assert expected == actual
 
     pex_file = os.path.join(str(tmpdir), "pex.file")
     exe, args = grab_ps(pex_file)
