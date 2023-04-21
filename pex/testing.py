@@ -601,6 +601,8 @@ def ensure_python_distribution(version):
                     "git",
                     "--git-dir={}".format(os.path.join(clone_dir, ".git")),
                     "--work-tree={}".format(clone_dir),
+                    # TODO: main branch does this, but shouwl we do something similar with pyenv-win?
+                    # "reset", "--hard", "v2.3.8",
                     "pull",
                     "--ff-only",
                     PYENV_GIT_URL,
