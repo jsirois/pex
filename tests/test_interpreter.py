@@ -13,9 +13,8 @@ from textwrap import dedent
 
 import pytest
 
-from pex import fs, hashing, interpreter
+from pex import fs, hashing
 from pex.common import chmod_plus_x, safe_mkdir, safe_mkdtemp, temporary_dir, touch
-from pex.compatibility import PY3
 from pex.executor import Executor
 from pex.fs import safe_rename
 from pex.interpreter import PythonInterpreter

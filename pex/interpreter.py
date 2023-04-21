@@ -25,6 +25,7 @@ from pex.os import WINDOWS, is_exe
 from pex.pep_425 import CompatibilityTags
 from pex.pep_508 import MarkerEnvironment
 from pex.platforms import Platform
+from pex.pth import iter_pth_paths
 from pex.pyenv import Pyenv
 from pex.sysconfig import EXE_EXTENSION, SCRIPT_DIR, script_name
 from pex.third_party.packaging import __version__ as packaging_version
@@ -100,6 +101,49 @@ class PythonIdentity(object):
             return None
         return str(value)
 
+    @staticmethod
+    def _iter_site_packages():
+        # type: () -> Iterator[str]
+
+        try:
+            from site import getsitepackages
+
+            for path in getsitepackages():
+                yield path
+        except ImportError as e:
+            # The site.py provided by old virtualenv (which we use to create some venvs) does not
+            # include a getsitepackages function.
+            TRACER.log("The site module does not define getsitepackages: {err}".format(err=e))
+
+        try:
+            from distutils.sysconfig import get_python_lib
+
+            yield get_python_lib(plat_specific=False)
+            yield get_python_lib(plat_specific=True)
+        except ImportError as e:
+            # The distutils.sysconfig module is deprecated in Python 3.10 but still around.
+            # Eventually it will go away with replacements in sysconfig that we'll add at that time
+            # as another site packages source.
+            TRACER.log(
+                "The distutils.sysconfig module does not define get_python_lib: {err}".format(err=e)
+            )
+
+    @staticmethod
+    def _iter_extras_paths(site_packages):
+        # type: (Iterable[str]) -> Iterator[str]
+
+        # Handle .pth injected paths as extras.
+        for dir_path in site_packages:
+            if not os.path.isdir(dir_path):
+                continue
+            for file in os.listdir(dir_path):
+                if not file.endswith(".pth"):
+                    continue
+                pth_path = os.path.join(dir_path, file)
+                TRACER.log("Found .pth file: {pth_file}".format(pth_file=pth_path), V=3)
+                for extras_path in iter_pth_paths(pth_path):
+                    yield extras_path
+
     @classmethod
     def get(cls, binary=None):
         # type: (Optional[str]) -> PythonIdentity
@@ -133,7 +177,18 @@ class PythonIdentity(object):
             + list(third_party.exposed())
             + [os.getcwd()]
         )
-        sys_path = [item for item in sys.path if item and item not in pythonpath]
+        sys_path = OrderedSet(item for item in sys.path if item and item not in pythonpath)
+
+        site_packages = OrderedSet(
+            path
+            for path in cls._iter_site_packages()
+            # On Windows getsitepackages() includes sys.prefix as a historical vestige. In PEP-250
+            # Windows got a proper dedicated directory for this which is what is used in the Pythons
+            # we support. See: https://peps.python.org/pep-0250/
+            if path != sys.prefix
+        )
+
+        extras_paths = OrderedSet(cls._iter_extras_paths(site_packages=site_packages))
 
         return cls(
             binary=binary or sys.executable,
@@ -146,6 +201,8 @@ class PythonIdentity(object):
                 or cast(str, getattr(sys, "base_prefix", sys.prefix))
             ),
             sys_path=sys_path,
+            site_packages=site_packages,
+            extras_paths=extras_paths,
             packaging_version=packaging_version,
             python_tag=preferred_tag.interpreter,
             abi_tag=preferred_tag.abi,
@@ -160,7 +217,7 @@ class PythonIdentity(object):
     def decode(cls, encoded):
         TRACER.log("creating PythonIdentity from encoded: %s" % encoded, V=9)
         values = json.loads(encoded)
-        if len(values) != 12:
+        if len(values) != 14:
             raise cls.InvalidError("Invalid interpreter identity: %s" % encoded)
 
         supported_tags = values.pop("supported_tags")
@@ -196,6 +253,8 @@ class PythonIdentity(object):
         prefix,  # type: str
         base_prefix,  # type: str
         sys_path,  # type: Iterable[str]
+        site_packages,  # type: Iterable[str]
+        extras_paths,  # type: Iterable[str]
         packaging_version,  # type: str
         python_tag,  # type: str
         abi_tag,  # type: str
@@ -214,6 +273,8 @@ class PythonIdentity(object):
         self._prefix = prefix
         self._base_prefix = base_prefix
         self._sys_path = tuple(sys_path)
+        self._site_packages = tuple(site_packages)
+        self._extras_paths = tuple(extras_paths)
         self._packaging_version = packaging_version
         self._python_tag = python_tag
         self._abi_tag = abi_tag
@@ -229,6 +290,8 @@ class PythonIdentity(object):
             prefix=self._prefix,
             base_prefix=self._base_prefix,
             sys_path=self._sys_path,
+            site_packages=self._site_packages,
+            extras_paths=self._extras_paths,
             packaging_version=self._packaging_version,
             python_tag=self._python_tag,
             abi_tag=self._abi_tag,
@@ -260,6 +323,16 @@ class PythonIdentity(object):
     def sys_path(self):
         # type: () -> Tuple[str, ...]
         return self._sys_path
+
+    @property
+    def site_packages(self):
+        # type: () -> Tuple[str, ...]
+        return self._site_packages
+
+    @property
+    def extras_paths(self):
+        # type: () -> Tuple[str, ...]
+        return self._extras_paths
 
     @property
     def python_tag(self):
@@ -471,8 +544,7 @@ class PythonInterpreter(object):
     @contextmanager
     def _cleared_memory_cache(cls):
         # type: () -> Iterator[None]
-
-        # A method for test use.
+        # Intended for test use.
 
         _cache = cls._PYTHON_INTERPRETER_BY_NORMALIZED_PATH.copy()
         cls._PYTHON_INTERPRETER_BY_NORMALIZED_PATH = {}
@@ -675,9 +747,6 @@ class PythonInterpreter(object):
         cmd = [binary]
 
         # Don't add the user site directory to `sys.path`.
-        #
-        # Additionally, it would be nice to pass `-S` to disable adding site-packages but unfortunately
-        # some python distributions include portions of the standard library there.
         cmd.append("-s")
 
         env = cls._sanitized_environment(env=env)
@@ -1048,6 +1117,18 @@ class PythonInterpreter(object):
         with no adornments.
         """
         return self._identity.sys_path
+
+    @property
+    def site_packages(self):
+        # type: () -> Tuple[str, ...]
+        """Return the interpreter's site packages directories."""
+        return self.identity.site_packages
+
+    @property
+    def extras_paths(self):
+        # type: () -> Tuple[str, ...]
+        """Return any extra paths adjoined to the `sys.path` via the .pth mechanism."""
+        return self.identity.extras_paths
 
     class BaseInterpreterResolutionError(Exception):
         """Indicates the base interpreter for a virtual environment could not be resolved."""
