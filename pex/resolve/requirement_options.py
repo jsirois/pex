@@ -8,14 +8,21 @@ from argparse import Namespace, _ActionsContainer
 from pex.resolve.requirement_configuration import RequirementConfiguration
 
 
-def register(parser):
-    # type: (_ActionsContainer) -> None
+def register(
+    parser,  # type: _ActionsContainer
+    include_positional_requirements=True,  # type: bool
+):
+    # type: (...) -> None
     """Register resolve requirement configuration options with the given parser.
 
     :param parser: The parser to register requirement configuration options with.
+    :param include_positional_requirements: Whether all positional arguments should be parsed
+        as requirement strings.
     """
 
-    parser.add_argument("requirements", nargs="*", help="Requirements to add to the pex")
+    if include_positional_requirements:
+        parser.add_argument("requirements", nargs="*", help="Requirements to add to the pex")
+
     parser.add_argument(
         "-r",
         "--requirement",
@@ -48,7 +55,7 @@ def configure(options):
     """Creates a requirement configuration from options registered by `register`."""
 
     return RequirementConfiguration(
-        requirements=options.requirements,
+        requirements=options.requirements if hasattr(options, "requirements") else (),
         requirement_files=options.requirement_files,
         constraint_files=options.constraint_files,
     )

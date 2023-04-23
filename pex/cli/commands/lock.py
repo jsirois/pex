@@ -33,6 +33,7 @@ from pex.resolve.lockfile.updater import (
     VersionUpdate,
 )
 from pex.resolve.path_mappings import PathMappings
+from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Fingerprint, Pin
 from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.target_configuration import InterpreterConstraintsNotSatisfied, TargetConfiguration
@@ -44,7 +45,7 @@ from pex.typing import TYPE_CHECKING
 from pex.version import __version__
 
 if TYPE_CHECKING:
-    from typing import IO, Dict, Iterable, List, Optional, Tuple, Union
+    from typing import IO, Any, Dict, Iterable, List, Optional, Tuple, Union
 
     import attr  # vendor:skip
 else:
@@ -157,12 +158,20 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         )
 
     @classmethod
-    def _add_lockfile_option(cls, parser, verb):
-        # type: (_ActionsContainer, str) -> None
+    def _add_lockfile_option(
+        cls,
+        parser,  # type: _ActionsContainer
+        verb,  # type: str
+        positional,  # type: bool
+    ):
+        # type: (...) -> None
+        extra_kwargs = {}  # type: Dict[str, Any]
+        if not positional:
+            extra_kwargs.update(dest="lockfile")
         parser.add_argument(
-            "lockfile",
-            nargs=1,
-            help="The Pex lock file to {verb}".format(verb=verb),
+            "lockfile" if positional else "--lock",
+            help="The Pex lock file to {verb}.".format(verb=verb),
+            **extra_kwargs
         )
 
     @classmethod
@@ -229,6 +238,23 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         cls._add_resolve_options(create_parser)
 
     @classmethod
+    def _add_subset_arguments(cls, subset_parser):
+        # type: (_ActionsContainer) -> None
+        cls._add_lockfile_option(subset_parser, verb="subset", positional=False)
+        cls._add_lock_options(subset_parser)
+        cls.add_output_option(subset_parser, entity="lock")
+        cls.add_json_options(subset_parser, entity="lock")
+        requirement_options.register(
+            subset_parser.add_argument_group(
+                title="Requirement options",
+                description="Indicate which requirements the subset should contain.",
+            )
+        )
+        cls._add_target_options(subset_parser)
+        resolver_options_parser = cls._create_resolver_options_group(subset_parser)
+        resolver_options.register_network_options(resolver_options_parser)
+
+    @classmethod
     def _add_export_arguments(cls, export_parser):
         # type: (_ActionsContainer) -> None
         export_parser.add_argument(
@@ -248,9 +274,19 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             type=ExportSortBy.for_value,
             help="How to sort the requirements in the export (if supported).",
         )
-        cls._add_lockfile_option(export_parser, verb="export")
+        cls._add_lockfile_option(export_parser, verb="export", positional=True)
         cls._add_lock_options(export_parser)
         cls.add_output_option(export_parser, entity="lock")
+        requirement_options.register(
+            export_parser.add_argument_group(
+                title="Requirement options",
+                description=(
+                    "Indicate requirements to use to form a subset of the lock for exporting. "
+                    "The entire lock is exported by default."
+                ),
+            ),
+            include_positional_requirements=False,
+        )
         cls._add_target_options(export_parser)
         resolver_options_parser = cls._create_resolver_options_group(export_parser)
         resolver_options.register_network_options(resolver_options_parser)
@@ -327,7 +363,7 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 )
             ),
         )
-        cls._add_lockfile_option(update_parser, verb="update")
+        cls._add_lockfile_option(update_parser, verb="update", positional=True)
         cls._add_lock_options(update_parser)
         cls.add_json_options(update_parser, entity="lock", include_switch=False)
         cls._add_target_options(update_parser)
@@ -350,6 +386,10 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             name="create", help="Create a lock file.", func=cls._create
         ) as create_parser:
             cls._add_create_arguments(create_parser)
+        with subcommands.parser(
+            name="subset", help="Subset a lock file.", func=cls._subset
+        ) as subset_parser:
+            cls._add_subset_arguments(subset_parser)
         with subcommands.parser(
             name="export",
             help="Export a Pex lock file for a single targeted environment in a different format.",
@@ -457,7 +497,11 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
 
     def _load_lockfile(self):
         # type: () -> Tuple[str, Lockfile]
-        lock_file_path = self.options.lockfile[0]
+        lock_file_path = (
+            self.options.lockfile
+            if isinstance(self.options.lockfile, str)
+            else self.options.lockfile[0]
+        )
         return lock_file_path, try_(parse_lockfile(self.options, lock_file_path=lock_file_path))
 
     def _get_path_mappings(self):
@@ -490,15 +534,13 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             with self.output(self.options) as output:
                 dump_with_terminating_newline(out=output)
 
-    def _export(self):
-        # type: () -> Result
-        if self.options.format != ExportFormat.PIP:
-            return Error(
-                "Only the {pip!r} lock format is supported currently.".format(pip=ExportFormat.PIP)
-            )
-
-        lockfile_path, lock_file = self._load_lockfile()
+    def _resolve_subset(self, include_all_matches=True):
+        # type: (bool) -> Union[Tuple[Lockfile, Resolved], Error]
+        lock_file_path, lock_file = self._load_lockfile()
         targets = target_options.configure(self.options).resolve_targets()
+        requirement_configuration = requirement_options.configure(self.options)
+        network_configuration = resolver_options.create_network_configuration(self.options)
+
         resolved_targets = targets.unique_targets()
         if len(resolved_targets) > 1:
             return Error(
@@ -515,39 +557,83 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             )
         target = next(iter(resolved_targets))
 
-        network_configuration = resolver_options.create_network_configuration(self.options)
         with TRACER.timed("Selecting locks for {target}".format(target=target)):
             subset_result = try_(
                 subset(
                     targets=targets,
                     lock=lock_file,
+                    requirement_configuration=requirement_configuration,
                     network_configuration=network_configuration,
                     build=lock_file.allow_builds,
                     use_wheel=lock_file.allow_wheels,
                     prefer_older_binary=lock_file.prefer_older_binary,
                     transitive=lock_file.transitive,
-                    include_all_matches=True,
+                    include_all_matches=include_all_matches,
                 )
             )
 
-        if len(subset_result.subsets) != 1:
-            resolved = Resolved.most_specific(
-                resolved_subset.resolved for resolved_subset in subset_result.subsets
+        if len(subset_result.subsets) == 1:
+            return lock_file, subset_result.subsets[0].resolved
+
+        resolved = Resolved.most_specific(
+            resolved_subset.resolved for resolved_subset in subset_result.subsets
+        )
+        pex_warnings.warn(
+            "Only a single lock can be exported in the {pip!r} format.\n"
+            "There were {count} locks stored in {lockfile} that were applicable for the "
+            "selected target: {target}; so using the most specific lock with platform "
+            "{platform}.".format(
+                count=len(subset_result.subsets),
+                lockfile=lock_file_path,
+                pip=ExportFormat.PIP,
+                target=target,
+                platform=resolved.source.platform_tag,
             )
-            pex_warnings.warn(
-                "Only a single lock can be exported in the {pip!r} format.\n"
-                "There were {count} locks stored in {lockfile} that were applicable for the "
-                "selected target: {target}; so using the most specific lock with platform "
-                "{platform}.".format(
-                    count=len(subset_result.subsets),
-                    lockfile=lockfile_path,
-                    pip=ExportFormat.PIP,
-                    target=target,
-                    platform=resolved.source.platform_tag,
+        )
+        return lock_file, resolved
+
+    def _subset(self):
+        # type: () -> Result
+        with TRACER.timed("Performing subset"):
+            lock_file, resolved = try_(
+                self._resolve_subset(
+                    # N.B.: We just need 1 artifact to establish a pin for the subset.
+                    include_all_matches=False,
                 )
             )
-        else:
-            resolved = subset_result.subsets[0].resolved
+
+            subset_pins = frozenset(
+                downloadable_artifact.pin
+                for downloadable_artifact in resolved.downloadable_artifacts
+            )
+            self._dump_lockfile(
+                attr.evolve(
+                    lock_file,
+                    requirements=SortedTuple(resolved.requirements),
+                    locked_resolves=SortedTuple(
+                        [
+                            attr.evolve(
+                                resolved.source,
+                                locked_requirements=SortedTuple(
+                                    locked_requirement
+                                    for locked_requirement in resolved.source.locked_requirements
+                                    if locked_requirement.pin in subset_pins
+                                ),
+                            )
+                        ]
+                    ),
+                )
+            )
+            return Ok()
+
+    def _export(self):
+        # type: () -> Result
+        if self.options.format != ExportFormat.PIP:
+            return Error(
+                "Only the {pip!r} lock format is supported currently.".format(pip=ExportFormat.PIP)
+            )
+
+        _, resolved = try_(self._resolve_subset())
 
         fingerprints_by_pin = OrderedDict()  # type: OrderedDict[Pin, List[Fingerprint]]
         for downloaded_artifact in resolved.downloadable_artifacts:

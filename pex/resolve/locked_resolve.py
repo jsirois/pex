@@ -8,14 +8,14 @@ import os
 from collections import OrderedDict, defaultdict, deque
 
 from pex.common import pluralize
-from pex.compatibility import unquote, urlparse
+from pex.compatibility import urlparse
 from pex.dist_metadata import DistMetadata, Requirement
 from pex.enum import Enum
 from pex.orderedset import OrderedSet
 from pex.pep_425 import CompatibilityTags, TagRank
 from pex.pep_503 import ProjectName
 from pex.rank import Rank
-from pex.requirements import VCS, VCSScheme, parse_scheme
+from pex.requirements import VCS, VCSScheme
 from pex.resolve.resolved_requirement import (
     ArtifactURL,
     Fingerprint,
@@ -25,7 +25,7 @@ from pex.resolve.resolved_requirement import (
 )
 from pex.result import Error
 from pex.sorted_tuple import SortedTuple
-from pex.targets import LocalInterpreter, Target
+from pex.targets import Target
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -428,6 +428,7 @@ class Resolved(object):
             )
 
         return cls(
+            requirements=tuple(direct_requirements),
             target_specificity=sum(target_specificities) / len(target_specificities),
             downloadable_artifacts=tuple(downloadable_artifacts),
             source=source,
@@ -442,6 +443,7 @@ class Resolved(object):
         # The most specific has the highest specificity which sorts last.
         return sorted_resolves[-1]
 
+    requirements = attr.ib()  # type: Tuple[Requirement, ...]
     target_specificity = attr.ib()  # type: float
     downloadable_artifacts = attr.ib()  # type: Tuple[DownloadableArtifact, ...]
     source = attr.ib(eq=False)  # type: LockedResolve
@@ -550,7 +552,6 @@ class LockedResolve(object):
     ):
         # type: (...) -> Union[Resolved, Error]
 
-        is_local_interpreter = isinstance(target, LocalInterpreter)
         if not use_wheel and not build:
             return Error(
                 "Cannot both ignore wheels (use_wheel=False) and refrain from building "

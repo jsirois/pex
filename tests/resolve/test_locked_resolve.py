@@ -35,7 +35,7 @@ from pex.third_party.packaging.tags import Tag
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Iterable, Iterator, Union
+    from typing import Iterable, Iterator, Tuple, Union
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ def req(requirement):
 
 
 def requirements(*reqs):
-    # type: (*str) -> Iterable[Requirement]
+    # type: (*str) -> Tuple[Requirement, ...]
     return tuple(req(requirement) for requirement in reqs)
 
 
@@ -829,6 +829,7 @@ def test_resolved():
             fingerprinter=DevNullFingerprinter(),
         )
         assert Resolved(
+            requirements=direct_requirements,
             target_specificity=expected_target_specificity,
             downloadable_artifacts=downloadable_artifacts,
             source=locked_resolve,
