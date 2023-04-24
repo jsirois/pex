@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import, print_function
 
+import os.path
 import sys
 from argparse import Action, ArgumentError, ArgumentParser, ArgumentTypeError, _ActionsContainer
 from collections import OrderedDict
@@ -13,13 +14,19 @@ from pex.argparse import HandleBoolAction
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
 from pex.common import pluralize
-from pex.dist_metadata import Requirement, RequirementParseError
+from pex.dist_metadata import Distribution, Requirement, RequirementParseError
 from pex.enum import Enum
+from pex.executor import Executor
+from pex.interpreter import PythonInterpreter
 from pex.orderedset import OrderedSet
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
-from pex.resolve import requirement_options, resolver_options, target_options
+from pex.pex import PEX
+from pex.pex_builder import CopyMode, PEXBuilder
+from pex.pex_info import PexInfo
+from pex.resolve import lock_resolver, requirement_options, resolver_options, target_options
 from pex.resolve.config import finalize as finalize_resolve_config
+from pex.resolve.configured_resolver import ConfiguredResolver
 from pex.resolve.locked_resolve import LockConfiguration, LockStyle, Resolved, TargetSystem
 from pex.resolve.lockfile import json_codec
 from pex.resolve.lockfile.create import create
@@ -35,13 +42,18 @@ from pex.resolve.lockfile.updater import (
 from pex.resolve.path_mappings import PathMappings
 from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Fingerprint, Pin
+from pex.resolve.resolver_configuration import PipConfiguration
 from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.target_configuration import InterpreterConstraintsNotSatisfied, TargetConfiguration
 from pex.result import Error, Ok, Result, try_
 from pex.sorted_tuple import SortedTuple
-from pex.targets import Targets
+from pex.targets import Target, Targets
 from pex.tracer import TRACER
-from pex.typing import TYPE_CHECKING
+from pex.typing import TYPE_CHECKING, cast
+from pex.venv.bin_path import BinPath
+from pex.venv.install_scope import InstallScope
+from pex.venv.pex import populate_venv
+from pex.venv.virtualenv import Virtualenv
 from pex.version import __version__
 
 if TYPE_CHECKING:
@@ -255,6 +267,80 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         resolver_options.register_network_options(resolver_options_parser)
 
     @classmethod
+    def _add_venv_arguments(cls, venv_parser):
+        # type: (_ActionsContainer) -> None
+        venv_parser.add_argument(
+            "-d",
+            "--venv-dir",
+            metavar="PATH",
+            required=True,
+            help=(
+                "The directory to create the virtual environment in. If the directory exists, it "
+                "must be an existing virtualenv, in which case it will be updated with the "
+                "selected lock contents unless `-f|--force` is specified, in which case it will be "
+                "over-written."
+            ),
+        )
+        venv_parser.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="If the venv directory already exists, overwrite it.",
+        )
+        venv_parser.add_argument(
+            "--collisions-ok",
+            action="store_true",
+            default=False,
+            help=(
+                "Don't error if population of the venv encounters distributions in the PEX file "
+                "with colliding files, just emit a warning."
+            ),
+        )
+        venv_parser.add_argument(
+            "-p",
+            "--pip",
+            action="store_true",
+            default=False,
+            help=(
+                "Add pip (and setuptools) to the venv. If the PEX already contains its own "
+                "conflicting versions pip (or setuptools), the command will error and you must "
+                "pass --collisions-ok to have the PEX versions over-ride the natural venv versions "
+                "installed by --pip."
+            ),
+        )
+        venv_parser.add_argument(
+            "--copies",
+            action="store_true",
+            default=False,
+            help="Create the venv using copies of system files instead of symlinks",
+        )
+        venv_parser.add_argument(
+            "--compile",
+            action="store_true",
+            default=False,
+            help="Compile all `.py` files in the venv.",
+        )
+        venv_parser.add_argument(
+            "--prompt",
+            help="A custom prompt for the venv activation scripts to use.",
+        )
+        venv_parser.add_argument(
+            "--non-hermetic-scripts",
+            dest="hermetic_scripts",
+            action="store_false",
+            default=True,
+            help=(
+                "Don't rewrite Python script shebangs in the venv to pass `-sE` to the "
+                "interpreter; for example, to enable running venv scripts with a custom "
+                "`PYTHONPATH`."
+            ),
+        )
+
+        cls._add_lockfile_option(venv_parser, verb="venv", positional=False)
+        cls._add_lock_options(venv_parser)
+        cls._add_resolve_options(venv_parser)
+
+    @classmethod
     def _add_export_arguments(cls, export_parser):
         # type: (_ActionsContainer) -> None
         export_parser.add_argument(
@@ -390,6 +476,10 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             name="subset", help="Subset a lock file.", func=cls._subset
         ) as subset_parser:
             cls._add_subset_arguments(subset_parser)
+        with subcommands.parser(
+            name="venv", help="Create a venv from a lock file.", func=cls._venv
+        ) as venv_parser:
+            cls._add_venv_arguments(venv_parser)
         with subcommands.parser(
             name="export",
             help="Export a Pex lock file for a single targeted environment in a different format.",
@@ -534,20 +624,19 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             with self.output(self.options) as output:
                 dump_with_terminating_newline(out=output)
 
-    def _resolve_subset(self, include_all_matches=True):
-        # type: (bool) -> Union[Tuple[Lockfile, Resolved], Error]
-        lock_file_path, lock_file = self._load_lockfile()
-        targets = target_options.configure(self.options).resolve_targets()
-        requirement_configuration = requirement_options.configure(self.options)
-        network_configuration = resolver_options.create_network_configuration(self.options)
-
+    @staticmethod
+    def _require_unique_target(
+        targets,  # type: Targets
+        purpose,  # type: str
+    ):
+        # type: (...) -> Union[Target, Error]
         resolved_targets = targets.unique_targets()
-        if len(resolved_targets) > 1:
+        if len(resolved_targets) != 1:
             return Error(
-                "A lock can only be exported for a single target in the {pip!r} format.\n"
+                "A single target is required for {purpose}.\n"
                 "There were {count} targets selected:\n"
                 "{targets}".format(
-                    pip=ExportFormat.PIP,
+                    purpose=purpose,
                     count=len(resolved_targets),
                     targets="\n".join(
                         "{index}. {target}".format(index=index, target=target)
@@ -555,8 +644,19 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     ),
                 )
             )
-        target = next(iter(resolved_targets))
+        return cast(Target, next(iter(resolved_targets)))
 
+    def _resolve_subset(
+        self,
+        purpose,  # type: str
+        include_all_matches=True,  # type: bool
+    ):
+        # type: (...) -> Union[Tuple[Lockfile, Resolved], Error]
+        lock_file_path, lock_file = self._load_lockfile()
+        targets = target_options.configure(self.options).resolve_targets()
+        target = self._require_unique_target(targets, purpose)
+        requirement_configuration = requirement_options.configure(self.options)
+        network_configuration = resolver_options.create_network_configuration(self.options)
         with TRACER.timed("Selecting locks for {target}".format(target=target)):
             subset_result = try_(
                 subset(
@@ -594,37 +694,128 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
 
     def _subset(self):
         # type: () -> Result
-        with TRACER.timed("Performing subset"):
-            lock_file, resolved = try_(
-                self._resolve_subset(
-                    # N.B.: We just need 1 artifact to establish a pin for the subset.
-                    include_all_matches=False,
+        lock_file, resolved = try_(
+            self._resolve_subset(
+                purpose="creating a lock subset",
+                # N.B.: We just need 1 artifact to establish a pin for the subset.
+                include_all_matches=False,
+            )
+        )
+
+        subset_pins = frozenset(
+            downloadable_artifact.pin for downloadable_artifact in resolved.downloadable_artifacts
+        )
+        self._dump_lockfile(
+            attr.evolve(
+                lock_file,
+                requirements=SortedTuple(resolved.requirements),
+                locked_resolves=SortedTuple(
+                    [
+                        attr.evolve(
+                            resolved.source,
+                            locked_requirements=SortedTuple(
+                                locked_requirement
+                                for locked_requirement in resolved.source.locked_requirements
+                                if locked_requirement.pin in subset_pins
+                            ),
+                        )
+                    ]
+                ),
+            )
+        )
+        return Ok()
+
+    def _venv(self):
+        lock_file_path, lock_file = self._load_lockfile()
+        targets = target_options.configure(self.options).resolve_targets()
+        target = self._require_unique_target(targets, purpose="creating a venv")
+        requirement_configuration = requirement_options.configure(self.options)
+        pip_configuration = try_(
+            finalize_resolve_config(
+                resolver_configuration=resolver_options.create_pip_configuration(self.options),
+                targets=targets,
+                context="venv creation",
+            )
+        )
+
+        with TRACER.timed("Installing wheels for {target}".format(target=target)):
+            installed = try_(
+                lock_resolver.resolve_from_lock(
+                    targets=targets,
+                    lock=lock_file,
+                    resolver=ConfiguredResolver(pip_configuration=pip_configuration),
+                    requirements=requirement_configuration.requirements,
+                    requirement_files=requirement_configuration.requirement_files,
+                    constraint_files=requirement_configuration.constraint_files,
+                    indexes=pip_configuration.repos_configuration.indexes,
+                    find_links=pip_configuration.repos_configuration.find_links,
+                    resolver_version=pip_configuration.resolver_version,
+                    network_configuration=pip_configuration.network_configuration,
+                    password_entries=(),
+                    build=pip_configuration.allow_builds,
+                    use_wheel=pip_configuration.allow_wheels,
+                    prefer_older_binary=pip_configuration.prefer_older_binary,
+                    use_pep517=pip_configuration.use_pep517,
+                    build_isolation=pip_configuration.build_isolation,
+                    transitive=pip_configuration.transitive,
+                    max_parallel_jobs=pip_configuration.max_jobs,
+                    pip_version=pip_configuration.version,
                 )
             )
 
-            subset_pins = frozenset(
-                downloadable_artifact.pin
-                for downloadable_artifact in resolved.downloadable_artifacts
+        venv_dir = self.options.venv_dir
+        update = os.path.exists(venv_dir)
+        with TRACER.timed(
+            "{verb} venv at {venv_dir} for {target}".format(
+                verb="Loading" if update else "Creating", venv_dir=venv_dir, target=target
             )
-            self._dump_lockfile(
-                attr.evolve(
-                    lock_file,
-                    requirements=SortedTuple(resolved.requirements),
-                    locked_resolves=SortedTuple(
-                        [
-                            attr.evolve(
-                                resolved.source,
-                                locked_requirements=SortedTuple(
-                                    locked_requirement
-                                    for locked_requirement in resolved.source.locked_requirements
-                                    if locked_requirement.pin in subset_pins
-                                ),
-                            )
-                        ]
-                    ),
+        ):
+            if update:
+                virtualenv = Virtualenv(venv_dir=venv_dir)
+            else:
+                virtualenv = Virtualenv.create(
+                    venv_dir=venv_dir,
+                    interpreter=target.get_interpreter(),
+                    force=self.options.force,
+                    copies=self.options.copies,
+                    prompt=self.options.prompt,
                 )
+            if self.options.pip:
+                virtualenv.install_pip()
+
+        with TRACER.timed(
+            "Installing {count} {wheels} in venv at {venv_dir}".format(
+                count=len(installed.installed_distributions),
+                wheels=pluralize(installed.installed_distributions, "wheel"),
+                venv_dir=venv_dir,
             )
-            return Ok()
+        ):
+            pex_builder = PEXBuilder(interpreter=virtualenv.interpreter, copy_mode=CopyMode.SYMLINK)
+            for installed in installed.installed_distributions:
+                for req in installed.direct_requirements:
+                    pex_builder.add_requirement(req)
+                pex_builder.add_distribution(
+                    dist=installed.fingerprinted_distribution.distribution,
+                    fingerprint=installed.fingerprinted_distribution.fingerprint,
+                )
+            pex_builder.freeze()
+            pex = PEX(pex=pex_builder.path(), interpreter=virtualenv.interpreter)
+
+            populate_venv(
+                venv=virtualenv,
+                pex=pex,
+                bin_path=BinPath.FALSE,
+                collisions_ok=self.options.collisions_ok,
+                symlink=False,
+                scope=InstallScope.DEPS_ONLY,
+                hermetic_scripts=not update and self.options.hermetic_scripts,
+            )
+        if self.options.compile:
+            try:
+                pex.interpreter.execute(["-m", "compileall", venv_dir])
+            except Executor.NonZeroExit as non_zero_exit:
+                pex_warnings.warn("ignoring compile error {}".format(repr(non_zero_exit)))
+        return Ok()
 
     def _export(self):
         # type: () -> Result
@@ -633,7 +824,9 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 "Only the {pip!r} lock format is supported currently.".format(pip=ExportFormat.PIP)
             )
 
-        _, resolved = try_(self._resolve_subset())
+        _, resolved = try_(
+            self._resolve_subset(purpose="exporting in {pip!r} format".format(pip=ExportFormat.PIP))
+        )
 
         fingerprints_by_pin = OrderedDict()  # type: OrderedDict[Pin, List[Fingerprint]]
         for downloaded_artifact in resolved.downloadable_artifacts:
