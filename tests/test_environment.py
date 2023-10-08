@@ -24,7 +24,6 @@ from pex.pex import PEX
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
 from pex.resolve.configured_resolver import ConfiguredResolver
-from pex.resolve.resolver_configuration import PipConfiguration
 from pex.targets import LocalInterpreter, Targets
 from pex.typing import TYPE_CHECKING
 from testing import (
@@ -160,7 +159,10 @@ def assert_force_local_implicit_ns_packages_issues_598(
                 builder.add_source(os.path.join(project, path), path)
 
     with temporary_dir() as root:
+        pex_root = os.path.join(root, "pex_root")
+
         pex_info1 = PexInfo.default()
+        pex_info1.pex_root = pex_root
         pex1 = os.path.join(root, "pex1.pex")
         builder1 = PEXBuilder(interpreter=interpreter, pex_info=pex_info1)
         add_requirements(builder1)
@@ -169,6 +171,7 @@ def assert_force_local_implicit_ns_packages_issues_598(
         builder1.build(pex1)
 
         pex_info2 = PexInfo.default()
+        pex_info2.pex_root = pex_root
         pex_info2.pex_path = [pex1]
         pex2 = os.path.join(root, "pex2")
         builder2 = PEXBuilder(path=pex2, interpreter=interpreter, pex_info=pex_info2)

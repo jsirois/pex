@@ -1280,19 +1280,19 @@ def test_pex_cache_dir_and_pex_root():
         assert not os.path.exists(pex_root)
 
 
-def test_disable_cache():
-    # type: () -> None
+def test_disable_cache(tmpdir):
+    # type: (Any) -> None
     python = ensure_python_interpreter(PY38)
-    with temporary_dir() as td:
-        pex_root = os.path.join(td, "pex_root")
-        pex_file = os.path.join(td, "pex_file")
-        run_pex_command(
-            python=python,
-            args=["--disable-cache", "p537==1.0.6", "-o", pex_file],
-            env=make_env(PEX_ROOT=pex_root),
-        ).assert_success()
+    pex_root = os.path.join(str(tmpdir), "pex_root")
+    pex_file = os.path.join(str(tmpdir), "pex_file")
+    result = run_pex_command(
+        python=python,
+        args=["--disable-cache", "p537==1.0.6", "-o", pex_file],
+        env=make_env(PEX_ROOT=pex_root),
+    )
+    result.assert_success()
 
-        assert not os.path.exists(pex_root)
+    assert not os.path.exists(pex_root), result.error
 
 
 def test_unzip_mode():

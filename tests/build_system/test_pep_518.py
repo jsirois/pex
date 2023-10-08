@@ -15,6 +15,7 @@ from pex.result import Error
 from pex.targets import LocalInterpreter
 from pex.typing import TYPE_CHECKING
 from pex.variables import ENV
+from pex.venv.virtualenv import Virtualenv
 
 if TYPE_CHECKING:
     from typing import Any, Optional, Union
@@ -71,7 +72,7 @@ def test_load_build_system_pyproject(
     assert "flit_core.buildapi" == build_system.build_backend
     dists = {
         dist.metadata.project_name
-        for dist in PEXEnvironment.mount(build_system.venv_pex.pex).resolve()
+        for dist in Virtualenv(build_system.venv_pex.venv_dir).iter_distributions()
     }
     assert ProjectName("flit_core") in dists
     subprocess.check_call(

@@ -3,6 +3,7 @@
 
 import os.path
 import subprocess
+import sys
 from textwrap import dedent
 
 import colors

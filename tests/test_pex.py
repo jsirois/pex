@@ -18,7 +18,7 @@ from pex import resolver
 from pex.common import safe_mkdir, safe_open, temporary_dir
 from pex.compatibility import PY2, WINDOWS, to_bytes
 from pex.dist_metadata import Distribution, Requirement
-from pex.interpreter import PythonInterpreter
+from pex.interpreter import PythonIdentity, PythonInterpreter
 from pex.pex import PEX, IsolatedSysPath
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo
@@ -222,8 +222,7 @@ def test_site_libs(tmpdir):
         site_packages = os.path.join(str(tmpdir), "site-packages")
         os.mkdir(site_packages)
         mock_site_packages.return_value = {site_packages}
-        with PythonInterpreter._cleared_memory_cache():
-            site_libs = PythonInterpreter.get().site_packages
+        site_libs = PythonIdentity.get().site_packages
         assert site_packages in site_libs
 
 
@@ -247,7 +246,7 @@ def test_site_libs_symlink(tmpdir):
 
         with PythonInterpreter._cleared_memory_cache():
             isolated_sys_path = IsolatedSysPath.for_pex(
-                interpreter=PythonInterpreter.get(), pex=os.devnull
+                interpreter=PythonIdentity.get(), pex=os.devnull
             )
         assert os.path.join(sys_path_entry, "module.py") in isolated_sys_path
         assert os.path.realpath(site_packages) not in isolated_sys_path
@@ -267,8 +266,7 @@ def test_site_libs_excludes_prefix():
         site_packages = os.path.join(tempdir, "site-packages")
         os.mkdir(site_packages)
         mock_site_packages.return_value = [site_packages, sys.prefix]
-        with PythonInterpreter._cleared_memory_cache():
-            site_libs = PythonInterpreter.get().site_packages
+        site_libs = PythonIdentity.get().site_packages
         assert site_packages in site_libs
         assert sys.prefix not in site_libs
 
