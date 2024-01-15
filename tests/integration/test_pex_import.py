@@ -10,7 +10,7 @@ import pytest
 
 from pex import targets
 from pex.common import safe_open
-from pex.layout import DEPS_DIR, Layout
+from pex.layout import Layout
 from pex.resolve.pex_repository_resolver import resolve_from_pex
 from pex.targets import Targets
 from pex.typing import TYPE_CHECKING
@@ -92,8 +92,6 @@ def test_import_from_pex(
     def get_third_party_prefix():
         if is_venv:
             return os.path.join(pex_root, "venvs")
-        elif layout is Layout.LOOSE:
-            return os.path.join(pex, DEPS_DIR)
         else:
             return os.path.join(pex_root, "installed_wheels")
 
@@ -137,15 +135,12 @@ def test_import_from_pex(
     first_party_path = execute_with_pex_on_pythonpath(
         "from __pex__ import first_party; print(first_party.__file__)"
     )
-    if not is_venv and layout is Layout.LOOSE:
-        assert os.path.join(pex, "first_party.py") == first_party_path
-    else:
-        expected_prefix = os.path.join(pex_root, "venvs" if is_venv else "unzipped_pexes")
-        assert first_party_path.startswith(
-            expected_prefix
-        ), "Expected 1st party first_party.py path {path} to start with {expected_prefix}".format(
-            path=first_party_path, expected_prefix=expected_prefix
-        )
+    expected_prefix = os.path.join(pex_root, "venvs" if is_venv else "unzipped_pexes")
+    assert first_party_path.startswith(
+        expected_prefix
+    ), "Expected 1st party first_party.py path {path} to start with {expected_prefix}".format(
+        path=first_party_path, expected_prefix=expected_prefix
+    )
 
     # Verify a single early import of __pex__ allows remaining imports to be "normal".
     assert "\n".join((colors.blue("42"), colors.yellow("Vogon"))) == execute_with_pex_on_pythonpath(

@@ -22,6 +22,7 @@ from pex.inherit_path import InheritPath
 from pex.interpreter import PythonIdentity, PythonInterpreter
 from pex.layout import Layout
 from pex.orderedset import OrderedSet
+from pex.pep_427 import InstalledWheel
 from pex.pex_info import PexInfo
 from pex.targets import LocalInterpreter
 from pex.tracer import TRACER
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
         Iterator,
         List,
         Mapping,
+        MutableMapping,
         NoReturn,
         Optional,
         Tuple,
@@ -144,12 +146,28 @@ class PEX(object):  # noqa: T000
         pass
 
     @classmethod
-    def _clean_environment(cls, env=None, strip_pex_env=True):
-        env = env or os.environ
+    def _prepare_environment(
+        cls,
+        env,  # type: MutableMapping[str, str]
+        strip_pex_env=True,  # type: bool
+        add_to_path=(),  # type: Iterable[str]
+    ):
+        # type: (...) -> MutableMapping[str, str]
+
         if strip_pex_env:
             for key in list(env):
                 if key.startswith("PEX_"):
                     del env[key]
+
+        if add_to_path:
+            path_entries = []
+            existing_path = env.get("PATH")
+            if existing_path:
+                path_entries.extend(existing_path.split(os.pathsep))
+            path_entries.extend(add_to_path)
+            env["PATH"] = os.pathsep.join(path_entries)
+
+        return env
 
     def __init__(
         self,
@@ -565,7 +583,23 @@ class PEX(object):  # noqa: T000
         # type: () -> Any
         force_interpreter = self._vars.PEX_INTERPRETER
 
-        self._clean_environment(strip_pex_env=self._pex_info.strip_pex_env)
+        add_to_path = []  # type: List[str]
+        with TRACER.timed("Adding any PEX dependency scripts to the PATH", V=3):
+            for dist in self.resolve():
+                installed_wheel = InstalledWheel.maybe_load(dist.location)
+                if not installed_wheel or not installed_wheel.supports_sh_python_redirector_scripts:
+                    # Ignore old installed wheel chroot layouts that don't support exposing scripts
+                    # in PEX files execution context.
+                    continue
+                try:
+                    script = next(installed_wheel.iter_scripts())
+                except StopIteration:
+                    continue
+                add_to_path.append(os.path.dirname(script))
+
+        self._prepare_environment(
+            env=os.environ, strip_pex_env=self._pex_info.strip_pex_env, add_to_path=add_to_path
+        )
 
         for name, value in self._pex_info.inject_env.items():
             os.environ.setdefault(name, value)
@@ -843,16 +877,15 @@ class PEX(object):  # noqa: T000
         :keyword blocking: If true, return the return code of the subprocess.
           If false, return the Popen object of the invoked subprocess.
         :keyword setsid: If true, run the PEX in a separate operating system session.
-        :keyword env: An optional environment dict to use as the PEX subprocess environment. If none is
-                      passed, the ambient environment is inherited.
+        :keyword env: An optional environment dict to use as the PEX subprocess environment. If None
+                      is passed, the ambient environment is inherited.
         Remaining keyword arguments are passed directly to subprocess.Popen.
         """
-        if env is not None:
-            # If explicit env vars are passed, we don't want to clean any of these.
-            env = env.copy()
-        else:
-            env = os.environ.copy()
-            self._clean_environment(env=env)
+        env = self._prepare_environment(
+            env=(env if env is not None else os.environ).copy(),
+            # If explicit env vars were passed, we don't want to clean any of those.
+            strip_pex_env=env is None,
+        )
 
         TRACER.log("PEX.run invoking {}".format(" ".join(self.cmdline(args))))
         _, process = self._interpreter.open_process(

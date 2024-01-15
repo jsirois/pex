@@ -16,8 +16,8 @@ from pex.interpreter_constraints import InterpreterConstraint
 from pex.pex import PEX
 from pex.pex_bootstrapper import ensure_venv
 from pex.pex_info import PexInfo
+from pex.provenance import CollisionError
 from pex.typing import TYPE_CHECKING
-from pex.venv.installer import CollisionError
 from pex.venv.virtualenv import Virtualenv
 from testing import PY38, PY39, PY_VER, ensure_python_interpreter, make_env, run_pex_command
 
@@ -48,7 +48,7 @@ def test_ensure_venv_short_link(
             dedent(
                 """\
                 [metadata]
-                name = collision
+                name = x_orders_me_last_collision
                 version = 0.0.1
 
                 [options]
@@ -117,8 +117,8 @@ def test_ensure_venv_short_link(
     )
 
     venv_pex = ensure_venv(PEX(collisions_pex), collisions_ok=True)
-    # We happen to know built distributions are always ordered before downloaded wheels in PEXes
-    # as a detail of how `pex/resolver.py` works.
+    # We named the collisions project x_orders_me_last_collision to ensure it orders last in the
+    # PEX PEX-INFO requirements and, as a result, is resolved and installed last at runtime.
     assert 42 == subprocess.Popen(args=[venv_pex.pex], env=make_env(PEX_SCRIPT="pex")).wait()
 
 

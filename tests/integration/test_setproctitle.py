@@ -144,10 +144,7 @@ def test_setproctitle(
     pex_info = PexInfo.from_pex(pex_file)
     assert pex_info.pex_hash is not None
 
-    if Layout.LOOSE == layout and not venv:
-        # N.B.: A non-venv loose PEX runs from where it is and presents a nice ps without help.
-        assert "{pex_file} --some arguments here".format(pex_file=pex_file) == args
-    elif venv:
+    if venv:
         # A `--venv` mode PEX boot terminates in a final process of:
         # ~/.pex/venvs/<venv long dir>/bin/python -sE ~/.pex/venvs/<venv long dir>/pex <args...>
         python_args, installed_location, rest = args.split(" ", 2)

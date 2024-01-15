@@ -11,8 +11,7 @@ from pex.finders import (
     get_entry_point_from_console_script,
     get_script_from_distributions,
 )
-from pex.pep_376 import InstalledWheel
-from pex.pep_427 import install_wheel_chroot
+from pex.pep_427 import InstalledWheel, install_wheel_chroot
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.typing import TYPE_CHECKING

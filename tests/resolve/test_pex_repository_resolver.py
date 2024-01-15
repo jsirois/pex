@@ -24,7 +24,7 @@ from pex.typing import TYPE_CHECKING, cast
 from testing import IS_LINUX, PY27, PY310, ensure_python_interpreter
 
 if TYPE_CHECKING:
-    from typing import DefaultDict, Iterable, Optional, Set
+    from typing import Any, DefaultDict, Iterable, Optional, Set
 
 
 def create_pex_repository(
@@ -35,9 +35,10 @@ def create_pex_repository(
     constraint_files=None,  # type: Optional[Iterable[str]]
     manylinux=None,  # type: Optional[str]
     result_type=InstallableType.INSTALLED_WHEEL_CHROOT,  # type: InstallableType.Value
+    dest_dir=None,  # type: Optional[str]
 ):
     # type: (...) -> str
-    pex_builder = PEXBuilder()
+    pex_builder = PEXBuilder(path=dest_dir)
     pex_builder.info.deps_are_wheel_files = result_type is InstallableType.WHEEL_FILE
     for resolved_dist in resolve(
         targets=Targets(
@@ -118,6 +119,7 @@ def pex_repository(
     py310,  # type: PythonInterpreter
     foreign_platform,  # type: Platform
     manylinux,  # type: Optional[str]
+    tmpdir_factory,  # type: Any
     request,  # type: pytest.FixtureRequest
 ):
     # type (...) -> str
@@ -139,6 +141,7 @@ def pex_repository(
         constraint_files=[constraints_file],
         manylinux=manylinux,
         result_type=request.param,
+        dest_dir=str(tmpdir_factory.mktemp("pex_repository")),
     )
 
 

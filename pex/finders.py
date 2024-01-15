@@ -6,11 +6,11 @@ from __future__ import absolute_import
 import ast
 import os
 
-from pex.common import is_python_script, open_zip, safe_mkdtemp
+from pex.common import open_zip, safe_mkdtemp
 from pex.dist_metadata import Distribution, DistributionType, EntryPoint
-from pex.pep_376 import InstalledWheel
-from pex.pep_427 import Wheel
+from pex.pep_427 import InstalledWheel, Wheel
 from pex.pep_503 import ProjectName
+from pex.scripts import is_python_script
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -37,16 +37,17 @@ class DistributionScript(object):
                     zfp.getinfo(script_path)
                 except KeyError:
                     return None
+            return cls(dist=dist, path=script_path)
         elif dist.type is DistributionType.INSTALLED:
-            script_path = InstalledWheel.load(dist.location).stashed_path("bin", name)
-            if not os.path.isfile(script_path):
+            maybe_script_path = InstalledWheel.load(dist.location).script_path(name)
+            if not maybe_script_path:
                 return None
-        else:
-            raise ValueError(
-                "Can only probe .whl files and installed wheel chroots for scripts; "
-                "given sdist: {sdist}".format(sdist=dist.location)
-            )
-        return cls(dist=dist, path=script_path)
+            return cls(dist=dist, path=maybe_script_path)
+
+        raise ValueError(
+            "Can only probe .whl files and installed wheel chroots for scripts; "
+            "given sdist: {sdist}".format(sdist=dist.location)
+        )
 
     dist = attr.ib()  # type: Distribution
     path = attr.ib()  # type: str

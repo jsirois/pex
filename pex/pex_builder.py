@@ -17,6 +17,7 @@ from pex.common import (
     Chroot,
     chmod_plus_x,
     deterministic_walk,
+    dir_size,
     is_pyc_file,
     is_pyc_temporary_file,
     safe_copy,
@@ -33,6 +34,7 @@ from pex.finders import get_entry_point_from_console_script, get_script_from_dis
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.orderedset import OrderedSet
+from pex.pep_427 import InstalledWheel
 from pex.pex import PEX
 from pex.pex_info import PexInfo
 from pex.sh_boot import create_sh_boot_script
@@ -42,7 +44,7 @@ from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper
 
 if TYPE_CHECKING:
-    from typing import Dict, Optional
+    from typing import Dict, Optional, Tuple
 
 # N.B.: __file__ will be relative when this module is loaded from a "" `sys.path` entry under
 # Python 2.7. This can occur in test scenarios; so we ensure the __file__ is resolved to an absolute
@@ -149,7 +151,7 @@ def __ensure_pex_installed__(pex, pex_root, pex_hash):
 
 
 def __maybe_run_venv__(pex, pex_root, pex_path):
-    from pex.common import is_exe
+    from pex.scripts import is_exe
     from pex.tracer import TRACER
     from pex.variables import venv_dir
 
@@ -490,30 +492,44 @@ class PEXBuilder(object):
 
     def _add_dist(
         self,
-        path,  # type: str
+        dist,  # type: Distribution
         dist_name,  # type: str
         fingerprint=None,  # type: Optional[str]
         is_wheel_file=False,  # type: bool
     ):
+        # type: (...) -> Tuple[str, int]
         target_dir = os.path.join(self._pex_info.internal_cache, dist_name)
-        if self._copy_mode is CopyMode.SYMLINK or is_wheel_file:
+        path = dist.location
+        if is_wheel_file:
             self._copy_or_link(
-                path,
-                target_dir,
-                label=dist_name,
-                compress=not is_wheel_file,
-                copy_mode=CopyMode.LINK if is_wheel_file else None,
+                path, target_dir, label=dist_name, compress=False, copy_mode=CopyMode.LINK
             )
-        else:
+            fp = fingerprint or CacheHelper.hash(path)
+            size = os.path.getsize(path)
+            return fp, size
+
+        installed_wheel = InstalledWheel.maybe_load(path)
+        if not installed_wheel:
             for root, _, files in os.walk(path):
                 for f in files:
                     filename = os.path.join(root, f)
                     relpath = os.path.relpath(filename, path)
                     target = os.path.join(target_dir, relpath)
                     self._copy_or_link(filename, target, label=dist_name)
-        return fingerprint or (
-            CacheHelper.hash(path) if is_wheel_file else CacheHelper.dir_hash(path)
+        elif self._copy_mode is CopyMode.SYMLINK:
+            for src, dst in installed_wheel.iter_top_level(target_dir):
+                self._copy_or_link(src, dst, label=dist_name)
+        else:
+            for src, dst in installed_wheel.iter_files(target_dir):
+                self._copy_or_link(src, dst, label=dist_name)
+
+        fp = fingerprint or CacheHelper.dir_hash(os.path.join(self._chroot.path(), target_dir))
+        size = (
+            installed_wheel.size
+            if installed_wheel and installed_wheel.size is not None
+            else dir_size(os.path.join(self._chroot.path(), target_dir), follow_links=True)
         )
+        return fp, size
 
     def add_distribution(
         self,
@@ -540,15 +556,15 @@ class PEXBuilder(object):
                 "Unsupported distribution type: {}, pex can only accept wheel files and dist "
                 "dirs (installed wheels).".format(dist)
             )
-        dist_hash = self._add_dist(
-            dist.location,
+        dist_hash, dist_size = self._add_dist(
+            dist,
             dist_name,
             fingerprint=fingerprint,
             is_wheel_file=dist.type is DistributionType.WHEEL,
         )
 
         # add dependency key so that it can rapidly be retrieved from cache
-        self._pex_info.add_distribution(dist_name, dist_hash)
+        self._pex_info.add_distribution(dist_name, dist_hash, dist_size)
 
     def add_dist_location(
         self,

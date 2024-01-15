@@ -1,0 +1,34 @@
+#!/bin/sh
+'''': pshprs
+# N.B.: This script should stick to syntax defined for POSIX `sh` and avoid non-builtins.
+# See: https://pubs.opengroup.org/onlinepubs/9699919799/idx/shell.html
+set -eu
+
+if [ -z "${PEX:-}" ]; then
+    echo >&2 "This script must be called with the PEX environment variable set to the"
+    echo >&2 "path of an executable PEX."
+    exit 64
+fi
+
+# Support all PEX layouts: zipapp files as well as loose and packed directories.
+if [ -d "$PEX" ]; then
+    PEX="$PEX/__main__.py"
+fi
+if [ ! -x "$PEX" ]; then
+    echo >&2 "The PEX environment variable is set to $PEX which does not point to an"
+    echo >&2 "executable PEX."
+    exit 65
+fi
+
+if [ -n "${PEX_VERBOSE:-}" ]; then
+    echo >&2 "Re-executing $0 via the PEX interpreter at $PEX"
+fi
+PEX_INTERPRETER=1 exec "$PEX" -sE "$0" "$@"
+'''
+# -*- coding: utf-8 -*-
+import sys
+
+import setuptools.command.easy_install
+
+if __name__ == '__main__':
+    sys.exit(setuptools.command.easy_install.main())

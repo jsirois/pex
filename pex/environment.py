@@ -67,18 +67,29 @@ def _import_pkg_resources():
 
 @attr.s(frozen=True)
 class _RankedDistribution(object):
-    # N.B.: A distribution implements rich comparison with the leading component being the
-    # `parsed_version`; as such, a _RankedDistribution sorts as a whole 1st by `rank` (which is a
-    # rank of the distribution's tags specificity for the target interpreter), then by version and
-    # finally by redundant components of distribution metadata we never get to since they are
-    # encoded in the tag specificity rank value.
+    # N.B.: A _RankedDistribution sorts as a whole 1st by `rank` (which is a rank of the
+    # distribution's tags specificity for the target interpreter), then by version and finally by
+    # redundant components of distribution metadata we never get to since they are encoded in the
+    # tag specificity rank value.
+
+    @staticmethod
+    def _fd_lt(
+        subject,  # type: FingerprintedDistribution
+        other,  # type: FingerprintedDistribution
+    ):
+        # type: (...) -> bool
+        if subject.distribution.metadata.version == other.distribution.metadata.version:
+            return subject < other
+
+        # Since we want to rank higher versions higher (earlier) we need to reverse the natural
+        # ordering of Version in Distribution which is least to greatest.
+        return subject.distribution.metadata.version > other.distribution.metadata.version
 
     # The attr project type stub file simply misses this.
     _fd_cmp = attr.cmp_using(  # type: ignore[attr-defined]
         eq=FingerprintedDistribution.__eq__,
-        # Since we want to rank higher versions higher (earlier) we need to reverse the natural
-        # ordering of Version in Distribution which is least to greatest.
-        lt=FingerprintedDistribution.__ge__,
+        lt=lambda self, other: _RankedDistribution._fd_lt(self, other),
+        require_same_type=True,
     )
 
     @classmethod
@@ -314,8 +325,10 @@ class PEXEnvironment(object):
                         fingerprint=fingerprint,
                     )
 
-    def _update_candidate_distributions(self, distribution_iter):
+    def _categorize_candidate_distributions(self, distribution_iter):
         # type: (Iterable[FingerprintedDistribution]) -> None
+        self._available_ranked_dists_by_project_name.clear()
+        self._unavailable_dists_by_project_name.clear()
         for fingerprinted_dist in distribution_iter:
             ranked_dist = self._can_add(fingerprinted_dist)
             project_name = fingerprinted_dist.project_name
@@ -415,12 +428,13 @@ class PEXEnvironment(object):
         resolved_distribution = sorted(available_distributions)[0].fingerprinted_distribution
         if len(available_distributions) > 1:
             TRACER.log(
-                "Resolved {req} to {dist} and discarded {discarded}.".format(
+                "Resolved {req} to {dist} and discarded {discarded} for {target}.".format(
                     req=requirement,
                     dist=resolved_distribution.distribution,
                     discarded=", ".join(
                         str(ranked_dist.distribution) for ranked_dist in available_distributions[1:]
                     ),
+                    target=self._target.render_description(),
                 ),
                 V=9,
             )
@@ -572,7 +586,7 @@ class PEXEnvironment(object):
 
             result_type_wheel_file = result_type is InstallableType.WHEEL_FILE
 
-        self._update_candidate_distributions(
+        self._categorize_candidate_distributions(
             self.iter_distributions(result_type_wheel_file=result_type_wheel_file)
         )
 

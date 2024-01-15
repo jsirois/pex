@@ -122,7 +122,7 @@ def demote(disable_vendor_importer=True):
     third_party.uninstall()
 
     bootstrap = Bootstrap.locate()
-    log("Demoting code from %s" % bootstrap, V=2)
+    log("Demoting code from {}".format(bootstrap), V=2)
     for module in bootstrap.demote(disable_vendor_importer=disable_vendor_importer):
         log("un-imported {}".format(module), V=9)
 
@@ -130,7 +130,17 @@ def demote(disable_vendor_importer=True):
 
     log("Re-imported pex from {}".format(pex.__path__), V=3)
 
-    log("PYTHONPATH contains:")
-    for element in sys.path:
-        log("  %c %s" % (" " if os.path.exists(element) else "*", element))
+    log("sys.path contains:")
+    has_cwd = False
+    for entry in sys.path:
+        if entry == "":
+            marker = ">"
+            has_cwd = True
+        elif not os.path.exists(entry):
+            marker = "*"
+        else:
+            marker = " "
+        log("  {marker} {entry}".format(marker=marker or " ", entry=entry))
     log("  * - paths that do not exist or will be imported via zipimport")
+    if has_cwd:
+        log("  > - the current working directory ({cwd})".format(cwd=os.getcwd()))

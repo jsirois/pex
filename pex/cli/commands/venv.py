@@ -11,7 +11,7 @@ from argparse import ArgumentParser, _ActionsContainer
 from pex import pex_warnings
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
-from pex.common import DETERMINISTIC_DATETIME, is_script, open_zip, pluralize
+from pex.common import DETERMINISTIC_DATETIME, open_zip, pluralize
 from pex.dist_metadata import Distribution
 from pex.enum import Enum
 from pex.executor import Executor
@@ -23,12 +23,13 @@ from pex.resolve.resolver_configuration import (
     PexRepositoryConfiguration,
 )
 from pex.result import Error, Ok, Result, try_
+from pex.scripts import is_script
 from pex.targets import LocalInterpreter, Target, Targets
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.venv import installer, installer_options
 from pex.venv.install_scope import InstallScope
-from pex.venv.installer import Provenance
+from pex.venv.installer import InstallProvenance
 from pex.venv.installer_configuration import InstallerConfiguration
 from pex.venv.virtualenv import Virtualenv
 
@@ -292,9 +293,11 @@ class Venv(OutputMixin, JsonMixin, BuildTimeCommand):
                 for resolved_distribution in resolved.distributions
             )
             provenance = (
-                Provenance.create(venv=venv)
+                InstallProvenance.target_venv(venv=venv)
                 if venv
-                else Provenance(target_dir=dest_dir, target_python=target.get_interpreter().binary)
+                else InstallProvenance.target_directory(
+                    target_dir=dest_dir, target_python=target.get_interpreter()
+                )
             )
             if pex:
                 _install_from_pex(
@@ -373,7 +376,7 @@ class Venv(OutputMixin, JsonMixin, BuildTimeCommand):
 def _install_from_pex(
     pex,  # type: PEX
     installer_configuration,  # type: InstallerConfiguration
-    provenance,  # type: Provenance
+    provenance,  # type: InstallProvenance
     distributions,  # type: Iterable[Distribution]
     dest_dir,  # type: str
     hermetic_scripts,  # type: bool

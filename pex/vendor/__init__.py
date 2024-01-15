@@ -324,7 +324,8 @@ def vendor_runtime(
                     d
                     for project in include_dist_info
                     for d in dirs
-                    if d.startswith(project) and d.endswith(".dist-info")
+                    # TODO(John Sirois): XXX: Don't hard-code `.stash`.
+                    if d.startswith(project) and d.endswith((".dist-info", ".data", ".stash"))
                 ]
                 files[:] = modules
 

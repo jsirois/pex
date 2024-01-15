@@ -14,13 +14,14 @@ from fileinput import FileInput
 from textwrap import dedent
 
 from pex.atomic_directory import AtomicDirectory, atomic_directory
-from pex.common import is_exe, safe_mkdir, safe_open
+from pex.common import safe_mkdir, safe_open
 from pex.compatibility import commonpath, get_stdout_bytes_buffer
 from pex.dist_metadata import Distribution, find_distributions
 from pex.executor import Executor
 from pex.fetcher import URLFetcher
 from pex.interpreter import PythonInterpreter, PyVenvCfg, create_shebang
 from pex.orderedset import OrderedSet
+from pex.scripts import is_exe, is_python_script
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
@@ -42,40 +43,6 @@ def _iter_files(directory):
     # type: (str) -> Iterator[str]
     for entry in os.listdir(directory):
         yield os.path.join(directory, entry)
-
-
-def _is_python_script(executable):
-    # type: (str) -> bool
-    with open(executable, "rb") as fp:
-        if fp.read(2) != b"#!":
-            return False
-        interpreter = fp.readline()
-        return bool(
-            # Support the `#!python` shebang that wheel installers should recognize as a special
-            # form to convert to a localized shebang upon install.
-            # See: https://www.python.org/dev/peps/pep-0427/#recommended-installer-features
-            interpreter == b"python\n"
-            or re.search(
-                br"""
-                # The aim is to admit the common shebang forms:
-                # + /usr/bin/env <python bin name>
-                # + /absolute/path/to/<python bin name>
-                \W
-
-                # Python executable names Pex supports (see PythonIdentity).
-                (
-                      python
-                    | pypy
-                )
-                # Optional Python version
-                (\d+(\.\d+)*)?
-
-                ([^.a-zA-Z0-9]|$)
-                """,
-                interpreter,
-                re.VERBOSE,
-            )
-        )
 
 
 class InvalidVirtualenvError(Exception):
@@ -377,7 +344,7 @@ class Virtualenv(object):
         scripts = [
             path
             for path in self._base_bin
-            if _is_python_script(path) or re.search(r"^[Aa]ctivate", os.path.basename(path))
+            if is_python_script(path) or re.search(r"^[Aa]ctivate", os.path.basename(path))
         ]
         if scripts:
             rewritten_files = set()
@@ -398,7 +365,7 @@ class Virtualenv(object):
     ):
         # type: (...) -> Iterator[str]
         python_scripts = [
-            executable for executable in self.iter_executables() if _is_python_script(executable)
+            executable for executable in self.iter_executables() if is_python_script(executable)
         ]
         if python_scripts:
             with closing(FileInput(files=sorted(python_scripts), inplace=True, mode="rb")) as fi:

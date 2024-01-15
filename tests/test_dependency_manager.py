@@ -1,20 +1,21 @@
 # Copyright 2023 Pex project contributors.
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-import hashlib
 import os.path
+import shutil
 import warnings
 
 import pytest
 
+from pex.common import touch
 from pex.dependency_manager import DependencyManager
 from pex.dist_metadata import DistMetadata, Distribution, Requirement
 from pex.fingerprinted_distribution import FingerprintedDistribution
 from pex.orderedset import OrderedSet
+from pex.pep_427 import InstalledWheel
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pex_builder import PEXBuilder
-from pex.pex_info import PexInfo
 from pex.pex_warnings import PEXWarning
 from pex.typing import TYPE_CHECKING
 
@@ -36,15 +37,25 @@ class DistFactory(object):
         *requires  # type: str
     ):
         # type: (...) -> FingerprintedDistribution
-        fingerprint = hashlib.sha256(name.encode("utf-8")).hexdigest()
+
+        work_dir = os.path.join(self.install_base_dir, ".work_dir", name)
+        version = Version("0.1.0")
+        record_relpath = os.path.join(
+            "{name}-{version}.dist-info".format(name=name, version=version), "RECORD"
+        )
+        touch(os.path.join(work_dir, record_relpath))
+        installed_wheel = InstalledWheel.save(work_dir, record_relpath=record_relpath)
+        fingerprint = installed_wheel.fingerprint
+        assert fingerprint is not None
+
         location = os.path.join(self.install_base_dir, fingerprint, name)
-        os.makedirs(location)
+        shutil.move(work_dir, location)
         return FingerprintedDistribution(
             distribution=Distribution(
                 location=location,
                 metadata=DistMetadata(
                     project_name=ProjectName(name),
-                    version=Version("0.1.0"),
+                    version=version,
                     requires_dists=tuple(Requirement.parse(req) for req in requires),
                 ),
             ),
@@ -100,15 +111,21 @@ def dist_graph(dist_factory):
     )
 
 
-def test_exclude_root_reqs(dist_graph):
-    # type: (DistGraph) -> None
+@pytest.fixture
+def pex_builder(tmpdir):
+    # type: (Any) -> PEXBuilder
+    return PEXBuilder(path=os.path.join(str(tmpdir), "chroot"))
+
+
+def test_exclude_root_reqs(
+    dist_graph,  # type: DistGraph
+    pex_builder,  # type: PEXBuilder
+):
+    # type: (...) -> None
 
     dependency_manager = DependencyManager(
         requirements=OrderedSet(dist_graph.root_reqs), distributions=OrderedSet(dist_graph.dists)
     )
-
-    pex_info = PexInfo.default()
-    pex_builder = PEXBuilder(pex_info=pex_info)
 
     with warnings.catch_warnings(record=True) as events:
         dependency_manager.configure(pex_builder, excluded=["a", "b"])
@@ -130,26 +147,27 @@ def test_exclude_root_reqs(dist_graph):
 
     pex_builder.freeze()
 
-    assert ["a", "b"] == list(pex_info.requirements)
-    assert ["a", "b"] == list(pex_info.excluded)
-    assert {} == pex_info.distributions
+    assert ["a", "b"] == list(pex_builder.info.requirements)
+    assert ["a", "b"] == list(pex_builder.info.excluded)
+    assert {} == pex_builder.info.distributions
 
 
-def test_exclude_complex(dist_graph):
-    # type: (DistGraph) -> None
+def test_exclude_complex(
+    dist_graph,  # type: DistGraph
+    pex_builder,  # type: PEXBuilder
+):
+    # type: (...) -> None
 
     dependency_manager = DependencyManager(
         requirements=OrderedSet(dist_graph.root_reqs), distributions=OrderedSet(dist_graph.dists)
     )
 
-    pex_info = PexInfo.default()
-    pex_builder = PEXBuilder(pex_info=pex_info)
     dependency_manager.configure(pex_builder, excluded=["c"])
     pex_builder.freeze()
 
-    assert ["a", "b"] == list(pex_info.requirements)
-    assert ["c"] == list(pex_info.excluded)
+    assert ["a", "b"] == list(pex_builder.info.requirements)
+    assert ["c"] == list(pex_builder.info.excluded)
     expected_dists = [dist_graph.dist(name) for name in ("A", "B", "D", "F")]
     assert {
         os.path.basename(dist.location): dist.fingerprint for dist in expected_dists
-    } == pex_info.distributions
+    } == pex_builder.info.distributions
