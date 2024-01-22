@@ -131,7 +131,9 @@ class SyncTarget(object):
         *additional_args  # type: str
     ):
         # type: (...) -> Union[SyncTarget, Error]
-        # TODO(John Sirois): XXX: This logix appears to be correct - clean it up!
+        # TODO(John Sirois): XXX: This logic appears to be correct - clean it up!
+        # TODO(John Sirois): XXX: But!: The bias proaly needs to be to executable 1st, if you really mean venv dir,
+        #  suffix with / on the cli
         venv = None  # type: Optional[Virtualenv]
         command = []  # type: List[str]
         if os.path.isdir(argv0) and not additional_args:
