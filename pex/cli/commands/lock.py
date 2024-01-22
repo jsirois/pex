@@ -39,7 +39,7 @@ from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Fingerprint, Pin
 from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.target_configuration import InterpreterConstraintsNotSatisfied, TargetConfiguration
-from pex.result import Error, Ok, Result, catch, try_
+from pex.result import Error, Ok, Result, try_
 from pex.sorted_tuple import SortedTuple
 from pex.targets import Targets
 from pex.tracer import TRACER
@@ -1149,13 +1149,17 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
 
         sync_target = None  # type: Optional[SyncTarget]
         if self.options.venv:
-            venv = try_(catch(Virtualenv, self.options.venv))
-            sync_target = SyncTarget.resolve_command(venv=venv, command=self.passthrough_args)
+            try:
+                venv = Virtualenv(self.options.venv)
+            except InvalidVirtualenvError as e:
+                return Error("The given --venv is not a valid venv: {err}".format(err=e))
+            else:
+                sync_target = try_(
+                    SyncTarget.resolve_command(venv=venv, command=self.passthrough_args)
+                )
         elif self.passthrough_args:
             sync_target = try_(
-                SyncTarget.resolve_venv(
-                    self.passthrough_args[0], *self.passthrough_args[1:]
-                )
+                SyncTarget.resolve_venv(self.passthrough_args[0], *self.passthrough_args[1:])
             )
         if sync_target:
             print("Sync target: ", sync_target, file=sys.stderr)
