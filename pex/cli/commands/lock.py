@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import, print_function
 
+import os.path
 import sys
 from argparse import Action, ArgumentError, ArgumentParser, ArgumentTypeError, _ActionsContainer
 from collections import OrderedDict
@@ -13,9 +14,10 @@ from pex.argparse import HandleBoolAction
 from pex.asserts import production_assert
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
-from pex.common import pluralize
+from pex.common import pluralize, is_exe
 from pex.dist_metadata import Requirement, RequirementParseError
 from pex.enum import Enum
+from pex.interpreter import PythonInterpreter
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.resolve import requirement_options, resolver_options, target_options
@@ -43,6 +45,7 @@ from pex.sorted_tuple import SortedTuple
 from pex.targets import Targets
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
+from pex.venv.virtualenv import Virtualenv, InvalidVirtualenvError
 from pex.version import __version__
 
 if TYPE_CHECKING:
@@ -117,6 +120,64 @@ class HandleDryRunAction(Action):
         else:
             dry_run_style = DryRunStyle.DISPLAY
         setattr(namespace, self.dest, dry_run_style)
+
+
+@attr.s(frozen=True)
+class SyncTarget(object):
+    @classmethod
+    def resolve(
+        cls,
+        argv0,  # type str
+        *additional_args  # type: str
+    ):
+        # type: (...) -> Union[SyncTarget, Error]
+        # TODO(John Sirois): XXX: This logix appears to be correct - clean it up!
+        venv = None  # type: Optional[Virtualenv]
+        command = []  # type: List[str]
+        if os.path.isdir(argv0) and not additional_args:
+            try:
+                venv = Virtualenv(os.path.abspath(argv0))
+            except InvalidVirtualenvError:
+                pass
+
+        if venv is None:
+            if os.path.exists(argv0) and not os.path.isdir(argv0):
+                argv0_path = os.path.abspath(argv0)
+            else:
+                path = os.environ.get("PATH")
+                if not path:
+                    return Error("TODO(John Sirois): XXX: Better error message for bare string and no PATH.")
+                for entry in path.split(os.pathsep):
+                    exe_path = os.path.realpath(os.path.join(entry, argv0))
+                    if is_exe(exe_path):
+                        argv0_path = exe_path
+                        break
+                else:
+                    return Error("TODO(John Sirois): XXX: Better error message for bare string not on PATH.")
+            if os.path.isfile(argv0_path):
+                venv = Virtualenv.enclosing(argv0_path)
+            if venv is None:
+                try:
+                    venv = Virtualenv(os.path.dirname(os.path.dirname(argv0_path)))
+                except InvalidVirtualenvError as e:
+                    return Error(
+                        "Could not find a valid venv enclosing {argv0}: {err}".format(
+                            argv0=argv0, err=e
+                        )
+                    )
+            command.append(argv0_path)
+            command.extend(additional_args)
+        return SyncTarget(venv=venv, command=tuple(command))
+
+    venv = attr.ib()  # type: Virtualenv
+    command = attr.ib()  # type: Optional[Tuple[str, ...]]
+
+    def sync(self, lockfile):
+        # type: (Lockfile) -> None
+
+        # TODO(John Sirois): XXX: Actually perform venv sync
+        if self.command:
+            os.execv(self.command[0], self.command)
 
 
 class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
@@ -408,6 +469,14 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         resolver_options.register_use_pip_config(resolver_options_parser)
 
     @classmethod
+    def _add_sync_arguments(cls, sync_parser):
+        # type: (_ActionsContainer) -> None
+        cls._add_lockfile_option(sync_parser, verb="update", positional=False)
+        cls._add_lock_options(sync_parser)
+        cls.add_json_options(sync_parser, entity="lock", include_switch=False)
+        cls._add_resolve_options(sync_parser)
+
+    @classmethod
     def add_extra_arguments(
         cls,
         parser,  # type: ArgumentParser
@@ -440,6 +509,19 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             name="update", help="Update a Pex lock file.", func=cls._update
         ) as update_parser:
             cls._add_update_arguments(update_parser)
+        with subcommands.parser(
+            name="sync",
+            help=(
+                "Create or update a Pex lock file from requirements and optionally synchronize a "
+                "venv to it."
+            ),
+            passthrough_args=(
+                "The path to a venv directory to sync with this lock or else a command line whose "
+                "1st argument resolves to a binary in a venv."
+            ),
+            func=cls._sync,
+        ) as update_parser:
+            cls._add_sync_arguments(update_parser)
 
     def _resolve_targets(
         self,
@@ -1028,3 +1110,15 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 output=fp,
             )
         return Ok()
+
+    def _sync(self):
+        print("Requirements: ", self.options.requirements, file=sys.stderr)
+        print("Pass through args: ", self.passthrough_args, file=sys.stderr)
+
+        if self.passthrough_args:
+            sync_target = try_(SyncTarget.resolve(self.passthrough_args[0], *self.passthrough_args[1:]))
+            print("Sync target: ", sync_target, file=sys.stderr)
+            _, lockfile = self._load_lockfile()
+            sync_target.sync(lockfile)
+
+        return Error("TODO(John Sirois): XXX: Finish me.")

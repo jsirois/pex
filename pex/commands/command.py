@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         Dict,
         Iterable,
         Iterator,
+        List,
         NoReturn,
         Optional,
         Sequence,
@@ -142,6 +143,7 @@ class Command(object):
         pass
 
     options = attr.ib()  # type: Namespace
+    passthrough_args = attr.ib(default=None)  # type: Optional[List[str]]
 
 
 class OutputMixin(object):
@@ -441,7 +443,17 @@ class Main(Generic["_C"]):
                 command_type.add_arguments(command_parser)
                 command_parser.set_defaults(command_type=command_type)
 
+        args = sys.argv[1:]
+        passthrough_args = None  # type: Optional[List[str]]
+        try:
+            passthrough_divide = args.index("--")
+        except ValueError:
+            pass
+        else:
+            passthrough_args = args[passthrough_divide + 1 :]
+            args = args[:passthrough_divide]
+
         options = parser.parse_args(args=args)
         with global_environment(options):
             command_type = cast("Type[_C]", options.command_type)
-            yield command_type(options)
+            yield command_type(options, passthrough_args)
