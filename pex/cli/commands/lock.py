@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import, print_function
 
+import itertools
 import os.path
 import sys
 from argparse import Action, ArgumentError, ArgumentParser, ArgumentTypeError, _ActionsContainer
@@ -14,13 +15,17 @@ from pex.argparse import HandleBoolAction
 from pex.asserts import production_assert
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
-from pex.common import is_exe, pluralize
-from pex.dist_metadata import Requirement, RequirementParseError
+from pex.common import is_exe, pluralize, safe_delete
+from pex.dist_metadata import Distribution, Requirement, RequirementParseError
 from pex.enum import Enum
+from pex.pep_376 import InstalledWheel, Record
+from pex.pep_427 import InstallableType
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.resolve import requirement_options, resolver_options, target_options
 from pex.resolve.config import finalize as finalize_resolve_config
+from pex.resolve.configured_resolver import ConfiguredResolver
+from pex.resolve.lock_resolver import resolve_from_lock
 from pex.resolve.locked_resolve import LockConfiguration, LockStyle, Resolved, TargetSystem
 from pex.resolve.lockfile import json_codec
 from pex.resolve.lockfile.create import create
@@ -41,14 +46,14 @@ from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.target_configuration import InterpreterConstraintsNotSatisfied, TargetConfiguration
 from pex.result import Error, Ok, Result, try_
 from pex.sorted_tuple import SortedTuple
-from pex.targets import Targets
+from pex.targets import LocalInterpreter, Targets
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 from pex.version import __version__
 
 if TYPE_CHECKING:
-    from typing import IO, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+    from typing import IO, Dict, Iterable, List, Mapping, Optional, Text, Tuple, Union
 
     import attr  # vendor:skip
 else:
@@ -129,15 +134,9 @@ class SyncTarget(object):
         venv,  # type: Virtualenv
         command=None,  # type: Optional[Tuple[str, ...]]
     ):
-        # type: (...) -> Union[SyncTarget, Error]
+        # type: (...) -> SyncTarget
         if command:
             argv0 = command[0] if os.path.isabs(command[0]) else venv.bin_path(command[0])
-            if not is_exe(argv0):
-                return Error(
-                    "The first argument of the sync command is not an executable: {argv0}".format(
-                        argv0=argv0
-                    )
-                )
             command = (argv0,) + command[1:]
         return SyncTarget(venv=venv, command=command)
 
@@ -197,12 +196,71 @@ class SyncTarget(object):
     venv = attr.ib()  # type: Virtualenv
     command = attr.ib(default=None)  # type: Optional[Tuple[str, ...]]
 
-    def sync(self, lockfile):
-        # type: (Lockfile) -> None
+    def sync(
+        self,
+        distributions,  # type: Iterable[Distribution]
+        confirm=True,  # type: bool
+    ):
+        # type: (...) -> Result
 
-        # TODO(John Sirois): XXX: Actually perform venv sync
+        existing_distributions_by_project_name = {
+            dist.metadata.project_name: dist for dist in self.venv.iter_distributions()
+        }  # type: Dict[ProjectName, Distribution]
+
+        to_remove = []  # type: List[Distribution]
+        to_install = []  # type: List[Distribution]
+        for distribution in distributions:
+            existing_distribution = existing_distributions_by_project_name.pop(
+                distribution.metadata.project_name, None
+            )
+            if not existing_distribution:
+                to_install.append(distribution)
+            elif existing_distribution.metadata.version != distribution.metadata.version:
+                to_remove.append(existing_distribution)
+                to_install.append(distribution)
+        to_remove.extend(existing_distributions_by_project_name.values())
+
+        to_unlink_by_pin = {}  # type: Dict[Tuple[ProjectName, Version], List[Text]]
+        for distribution in to_remove:
+            to_unlink = [
+                os.path.normpath(os.path.join(distribution.location, installed_file.path))
+                for installed_file in Record.read(distribution.iter_metadata_lines("RECORD"))
+            ]
+            if to_unlink:
+                to_unlink_by_pin[
+                    (distribution.metadata.project_name, distribution.metadata.version)
+                ] = to_unlink
+        if confirm and to_unlink_by_pin:
+            for (project_name, version), files in to_unlink_by_pin.items():
+                print(project_name, version, ":", file=sys.stderr)
+                for f in files:
+                    print("    ", f, file=sys.stderr)
+            if input(
+                "Remove the outdated distributions listed above from the venv at "
+                "{venv}? [yN]: ".format(venv=self.venv.venv_dir)
+            ).strip().lower() not in ("y", "yes"):
+                return Error("Sync cancelled.")
+
+        if to_unlink_by_pin:
+            for file in itertools.chain.from_iterable(to_unlink_by_pin.values()):
+                safe_delete(file)
+
+        if to_install:
+            for distribution in to_install:
+                for src, dst in InstalledWheel.load(distribution.location).reinstall_venv(
+                    self.venv
+                ):
+                    TRACER.log("Installed {src} -> {dst}".format(src=src, dst=dst))
+            for script in self.venv.rewrite_scripts():
+                TRACER.log("Re-wrote script shebang for {script}".format(script=script))
+
         if self.command:
-            os.execv(self.command[0], self.command)
+            try:
+                os.execv(self.command[0], self.command)
+            except OSError as e:
+                return Error("Failed to execute {exe}: {err}".format(exe=self.command[0], err=e))
+
+        return Ok()
 
 
 class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
@@ -1144,26 +1202,40 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         return Ok()
 
     def _sync(self):
-        print("Requirements: ", self.options.requirements, file=sys.stderr)
-        print("Pass through args: ", self.passthrough_args, file=sys.stderr)
-
         sync_target = None  # type: Optional[SyncTarget]
         if self.options.venv:
+            # TODO(John Sirois): XXX: Handle creating non-existing venvs: issue - which interpreter
+            #  to pick.
             try:
                 venv = Virtualenv(self.options.venv)
             except InvalidVirtualenvError as e:
                 return Error("The given --venv is not a valid venv: {err}".format(err=e))
             else:
-                sync_target = try_(
-                    SyncTarget.resolve_command(venv=venv, command=self.passthrough_args)
-                )
+                sync_target = SyncTarget.resolve_command(venv=venv, command=self.passthrough_args)
         elif self.passthrough_args:
             sync_target = try_(
                 SyncTarget.resolve_venv(self.passthrough_args[0], *self.passthrough_args[1:])
             )
         if sync_target:
-            print("Sync target: ", sync_target, file=sys.stderr)
             _, lockfile = self._load_lockfile()
-            sync_target.sync(lockfile)
+            target = LocalInterpreter.create(sync_target.venv.interpreter)
+            resolve_result = try_(
+                resolve_from_lock(
+                    targets=Targets.from_target(target),
+                    lock=lockfile,
+                    # TODO(John Sirois): XXX: Plumb resolve options
+                    resolver=ConfiguredResolver.default(),
+                    result_type=InstallableType.INSTALLED_WHEEL_CHROOT,
+                )
+            )
+            try_(
+                sync_target.sync(
+                    distributions=[
+                        resolved_distribution.distribution
+                        for resolved_distribution in resolve_result.distributions
+                        if resolved_distribution.target == target
+                    ]
+                )
+            )
 
         return Error("TODO(John Sirois): XXX: Finish me.")
