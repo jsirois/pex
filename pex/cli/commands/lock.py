@@ -14,10 +14,9 @@ from pex.argparse import HandleBoolAction
 from pex.asserts import production_assert
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
-from pex.common import pluralize, is_exe
+from pex.common import is_exe, pluralize
 from pex.dist_metadata import Requirement, RequirementParseError
 from pex.enum import Enum
-from pex.interpreter import PythonInterpreter
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.resolve import requirement_options, resolver_options, target_options
@@ -40,12 +39,12 @@ from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Fingerprint, Pin
 from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.target_configuration import InterpreterConstraintsNotSatisfied, TargetConfiguration
-from pex.result import Error, Ok, Result, try_
+from pex.result import Error, Ok, Result, catch, try_
 from pex.sorted_tuple import SortedTuple
 from pex.targets import Targets
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
-from pex.venv.virtualenv import Virtualenv, InvalidVirtualenvError
+from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 from pex.version import __version__
 
 if TYPE_CHECKING:
@@ -125,7 +124,25 @@ class HandleDryRunAction(Action):
 @attr.s(frozen=True)
 class SyncTarget(object):
     @classmethod
-    def resolve(
+    def resolve_command(
+        cls,
+        venv,  # type: Virtualenv
+        command=None,  # type: Optional[Tuple[str, ...]]
+    ):
+        # type: (...) -> Union[SyncTarget, Error]
+        if command:
+            argv0 = command[0] if os.path.isabs(command[0]) else venv.bin_path(command[0])
+            if not is_exe(argv0):
+                return Error(
+                    "The first argument of the sync command is not an executable: {argv0}".format(
+                        argv0=argv0
+                    )
+                )
+            command = (argv0,) + command[1:]
+        return SyncTarget(venv=venv, command=command)
+
+    @classmethod
+    def resolve_venv(
         cls,
         argv0,  # type str
         *additional_args  # type: str
@@ -136,26 +153,31 @@ class SyncTarget(object):
         #  suffix with / on the cli
         venv = None  # type: Optional[Virtualenv]
         command = []  # type: List[str]
+
         if os.path.isdir(argv0) and not additional_args:
             try:
-                venv = Virtualenv(os.path.abspath(argv0))
+                venv = Virtualenv(argv0)
             except InvalidVirtualenvError:
                 pass
 
         if venv is None:
             if os.path.exists(argv0) and not os.path.isdir(argv0):
-                argv0_path = os.path.abspath(argv0)
+                argv0_path = argv0
             else:
                 path = os.environ.get("PATH")
                 if not path:
-                    return Error("TODO(John Sirois): XXX: Better error message for bare string and no PATH.")
+                    return Error(
+                        "TODO(John Sirois): XXX: Better error message for bare string and no PATH."
+                    )
                 for entry in path.split(os.pathsep):
                     exe_path = os.path.realpath(os.path.join(entry, argv0))
                     if is_exe(exe_path):
                         argv0_path = exe_path
                         break
                 else:
-                    return Error("TODO(John Sirois): XXX: Better error message for bare string not on PATH.")
+                    return Error(
+                        "TODO(John Sirois): XXX: Better error message for bare string not on PATH."
+                    )
             if os.path.isfile(argv0_path):
                 venv = Virtualenv.enclosing(argv0_path)
             if venv is None:
@@ -169,10 +191,11 @@ class SyncTarget(object):
                     )
             command.append(argv0_path)
             command.extend(additional_args)
+
         return SyncTarget(venv=venv, command=tuple(command))
 
     venv = attr.ib()  # type: Virtualenv
-    command = attr.ib()  # type: Optional[Tuple[str, ...]]
+    command = attr.ib(default=None)  # type: Optional[Tuple[str, ...]]
 
     def sync(self, lockfile):
         # type: (Lockfile) -> None
@@ -473,6 +496,13 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
     @classmethod
     def _add_sync_arguments(cls, sync_parser):
         # type: (_ActionsContainer) -> None
+        sync_parser.add_argument(
+            "--venv",
+            help=(
+                "Synchronize this venv to the contents of the lock after synchronizing the "
+                "contents of the lock to the passed requirements."
+            ),
+        )
         cls._add_lockfile_option(sync_parser, verb="update", positional=False)
         cls._add_lock_options(sync_parser)
         cls.add_json_options(sync_parser, entity="lock", include_switch=False)
@@ -1117,8 +1147,17 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         print("Requirements: ", self.options.requirements, file=sys.stderr)
         print("Pass through args: ", self.passthrough_args, file=sys.stderr)
 
-        if self.passthrough_args:
-            sync_target = try_(SyncTarget.resolve(self.passthrough_args[0], *self.passthrough_args[1:]))
+        sync_target = None  # type: Optional[SyncTarget]
+        if self.options.venv:
+            venv = try_(catch(Virtualenv, self.options.venv))
+            sync_target = SyncTarget.resolve_command(venv=venv, command=self.passthrough_args)
+        elif self.passthrough_args:
+            sync_target = try_(
+                SyncTarget.resolve_venv(
+                    self.passthrough_args[0], *self.passthrough_args[1:]
+                )
+            )
+        if sync_target:
             print("Sync target: ", sync_target, file=sys.stderr)
             _, lockfile = self._load_lockfile()
             sync_target.sync(lockfile)
