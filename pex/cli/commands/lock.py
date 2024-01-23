@@ -16,6 +16,7 @@ from pex.asserts import production_assert
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
 from pex.common import is_exe, pluralize, safe_delete
+from pex.compatibility import commonpath
 from pex.dist_metadata import Distribution, Requirement, RequirementParseError
 from pex.enum import Enum
 from pex.interpreter import PythonInterpreter
@@ -62,7 +63,7 @@ from pex.venv.virtualenv import InvalidVirtualenvError, Virtualenv
 from pex.version import __version__
 
 if TYPE_CHECKING:
-    from typing import IO, Dict, Iterable, List, Mapping, Optional, Text, Tuple, Union
+    from typing import IO, Dict, Iterable, List, Mapping, Optional, Set, Text, Tuple, Union
 
     import attr  # vendor:skip
 else:
@@ -212,6 +213,8 @@ class SyncTarget(object):
     ):
         # type: (...) -> Result
 
+        abs_venv_dir = os.path.realpath(self.venv.venv_dir)
+
         existing_distributions_by_project_name = {
             dist.metadata.project_name: dist for dist in self.venv.iter_distributions()
         }  # type: Dict[ProjectName, Distribution]
@@ -232,14 +235,13 @@ class SyncTarget(object):
         to_unlink_by_pin = {}  # type: Dict[Tuple[ProjectName, Version], List[Text]]
         for distribution in to_remove:
             to_unlink = [
-                os.path.normpath(os.path.join(distribution.location, installed_file.path))
+                os.path.realpath(os.path.join(distribution.location, installed_file.path))
                 for installed_file in Record.read(distribution.iter_metadata_lines("RECORD"))
             ]
-            # TODO(John Sirois): XXX: Validate to_unlink real paths all lay inside venv parent dir.
             if to_unlink:
                 to_unlink_by_pin[
                     (distribution.metadata.project_name, distribution.metadata.version)
-                ] = to_unlink
+                ] = [file for file in to_unlink if abs_venv_dir == commonpath((abs_venv_dir, file))]
         if confirm and to_unlink_by_pin:
             for (project_name, version), files in to_unlink_by_pin.items():
                 print(project_name, version, ":", file=sys.stderr)
@@ -252,9 +254,15 @@ class SyncTarget(object):
                 return Error("Sync cancelled.")
 
         if to_unlink_by_pin:
+            parent_dirs = set()  # type: Set[Text]
             for file in itertools.chain.from_iterable(to_unlink_by_pin.values()):
-                # TODO(John Sirois): XXX: Remove empty parent dirs.
                 safe_delete(file)
+                parent_dirs.add(os.path.dirname(file))
+            for parent_dir in sorted(parent_dirs, reverse=True):
+                if not os.listdir(parent_dir) and abs_venv_dir == commonpath(
+                    (abs_venv_dir, parent_dir)
+                ):
+                    os.rmdir(parent_dir)
 
         if to_install:
             for distribution in to_install:
@@ -1289,11 +1297,22 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 elif isinstance(parsed_requirement, LocalProjectRequirement):
                     return Error(
                         "Cannot update a bare local project directory requirement on {path}.\n"
-                        "Re-phrase as a PEP-508 direct reference with a file:// URL".format(
+                        "Try re-phrasing as a PEP-508 direct reference with a file:// URL.\n"
+                        "See: https://peps.python.org/pep-0508/".format(
                             path=parsed_requirement.path
                         )
                     )
-            delete_projects = tuple(original_requirements_by_project_name) if parsed_requirements else ()
+                else:
+                    return Error(
+                        "Cannot update lock for requirement: {requirement}.\n"
+                        "Try re-phrasing the requirement in a PEP-508 compatible form.\n"
+                        "See: https://peps.python.org/pep-0508/".format(
+                            requirement=parsed_requirement
+                        )
+                    )
+            delete_projects = (
+                tuple(original_requirements_by_project_name) if parsed_requirements else ()
+            )
             if any((replace_requirements, delete_projects)):
                 try_(
                     self._update_lock(
@@ -1356,18 +1375,18 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 constraint_files=requirement_configuration.constraint_files,
                 indexes=pip_configuration.repos_configuration.indexes,
                 find_links=pip_configuration.repos_configuration.find_links,
-                password_entries=pip_configuration.repos_configuration.password_entries,
+                resolver_version=pip_configuration.resolver_version,
                 network_configuration=pip_configuration.network_configuration,
+                password_entries=pip_configuration.repos_configuration.password_entries,
                 build=pip_configuration.allow_builds,
                 use_wheel=pip_configuration.allow_wheels,
                 prefer_older_binary=pip_configuration.prefer_older_binary,
                 use_pep517=pip_configuration.use_pep517,
                 build_isolation=pip_configuration.build_isolation,
                 transitive=pip_configuration.transitive,
-                resolver_version=pip_configuration.resolver_version,
+                max_parallel_jobs=pip_configuration.max_jobs,
                 pip_version=pip_configuration.version,
                 use_pip_config=pip_configuration.use_pip_config,
-                max_parallel_jobs=pip_configuration.max_jobs,
                 result_type=InstallableType.INSTALLED_WHEEL_CHROOT,
             )
         )
