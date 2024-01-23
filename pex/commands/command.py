@@ -443,7 +443,7 @@ class Main(Generic["_C"]):
                 command_type.add_arguments(command_parser)
                 command_parser.set_defaults(command_type=command_type)
 
-        args = sys.argv[1:]
+        args = args or sys.argv[1:]
         passthrough_args = None  # type: Optional[Tuple[str, ...]]
         try:
             passthrough_divide = args.index("--")
