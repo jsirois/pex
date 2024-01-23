@@ -253,6 +253,7 @@ class SyncTarget(object):
 
         if to_unlink_by_pin:
             for file in itertools.chain.from_iterable(to_unlink_by_pin.values()):
+                # TODO(John Sirois): XXX: Remove empty parent dirs.
                 safe_delete(file)
 
         if to_install:
@@ -1273,9 +1274,10 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
 
             replace_requirements = []  # type: List[Requirement]
             requirement_configuration = requirement_options.configure(self.options)
-            for parsed_requirement in requirement_configuration.parse_requirements(
+            parsed_requirements = requirement_configuration.parse_requirements(
                 network_configuration=pip_configuration.network_configuration
-            ):
+            )
+            for parsed_requirement in parsed_requirements:
                 if isinstance(
                     parsed_requirement, (PyPIRequirement, URLRequirement, VCSRequirement)
                 ):
@@ -1291,7 +1293,7 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                             path=parsed_requirement.path
                         )
                     )
-            delete_projects = tuple(original_requirements_by_project_name)
+            delete_projects = tuple(original_requirements_by_project_name) if parsed_requirements else ()
             if any((replace_requirements, delete_projects)):
                 try_(
                     self._update_lock(
