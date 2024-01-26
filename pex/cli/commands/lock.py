@@ -157,51 +157,50 @@ class SyncTarget(object):
         *additional_args  # type: str
     ):
         # type: (...) -> Union[SyncTarget, Error]
-        # TODO(John Sirois): XXX: This logic appears to be correct - clean it up!
-        # TODO(John Sirois): XXX: But!: The bias proaly needs to be to executable 1st, if you really mean venv dir,
-        #  suffix with / on the cli
-        venv = None  # type: Optional[Virtualenv]
-        command = []  # type: List[str]
 
-        if os.path.isdir(argv0) and not additional_args:
-            try:
-                venv = Virtualenv(argv0)
-            except InvalidVirtualenvError:
-                pass
-
-        if venv is None:
-            if os.path.exists(argv0) and not os.path.isdir(argv0):
-                argv0_path = argv0
-            else:
-                path = os.environ.get("PATH")
-                if not path:
-                    return Error(
-                        "TODO(John Sirois): XXX: Better error message for bare string and no PATH."
-                    )
+        argv0_path = None  # type: Optional[str]
+        if is_exe(argv0):
+            argv0_path = argv0
+        else:
+            path = os.environ.get("PATH")
+            if path:
                 for entry in path.split(os.pathsep):
-                    exe_path = os.path.realpath(os.path.join(entry, argv0))
+                    exe_path = os.path.abspath(os.path.join(entry, argv0))
                     if is_exe(exe_path):
                         argv0_path = exe_path
                         break
-                else:
-                    return Error(
-                        "TODO(John Sirois): XXX: Better error message for bare string not on PATH."
-                    )
-            if os.path.isfile(argv0_path):
-                venv = Virtualenv.enclosing(argv0_path)
-            if venv is None:
+
+        if argv0_path:
+            venv = Virtualenv.enclosing(python=argv0_path)
+            if not venv:
                 try:
                     venv = Virtualenv(os.path.dirname(os.path.dirname(argv0_path)))
                 except InvalidVirtualenvError as e:
                     return Error(
-                        "Could not find a valid venv enclosing {argv0}: {err}".format(
-                            argv0=argv0, err=e
+                        "Could not find a valid venv enclosing {argv0} to sync: {err}.\n"
+                        "Try explicitly specifying a venv to sync with `--venv`.".format(
+                            err=e, argv0=argv0
                         )
                     )
-            command.append(argv0_path)
+            command = [argv0_path]
             command.extend(additional_args)
+            return SyncTarget(venv=venv, command=tuple(command))
 
-        return SyncTarget(venv=venv, command=tuple(command))
+        if os.path.isdir(argv0) and not additional_args:
+            try:
+                return SyncTarget(venv=Virtualenv(argv0))
+            except InvalidVirtualenvError as e:
+                return Error(
+                    "The directory at {path} is not a valid venv to sync: {err}.\n"
+                    "Try explicitly specifying a venv to sync with `--venv`.".format(
+                        err=e, path=argv0
+                    )
+                )
+
+        return Error(
+            "Could not determine a venv to sync after examining {argv0}.\n"
+            "Try explicitly specifying a venv to sync with `--venv`.".format(argv0=argv0)
+        )
 
     venv = attr.ib()  # type: Virtualenv
     command = attr.ib(default=None)  # type: Optional[Tuple[str, ...]]
@@ -1349,8 +1348,8 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     ]
                     if len(interpreters) != 1:
                         return Error(
-                            "In order to create the venv {venv} the sync operation needs to know which interpreter to "
-                            "use to create it.\n"
+                            "In order to create the venv {venv} the sync operation needs to know "
+                            "which interpreter to use to create it.\n"
                             "Use `--venv-interpreter` to select an interpreter for venv creation."
                         )
                     interpreter = interpreters[0]
