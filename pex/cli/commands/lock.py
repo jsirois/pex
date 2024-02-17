@@ -15,7 +15,7 @@ from pex.argparse import HandleBoolAction
 from pex.asserts import production_assert
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
-from pex.common import is_exe, pluralize, safe_delete
+from pex.common import is_exe, pluralize, safe_delete, safe_open
 from pex.compatibility import commonpath
 from pex.dist_metadata import Distribution, Requirement, RequirementParseError
 from pex.enum import Enum
@@ -25,7 +25,6 @@ from pex.pep_427 import InstallableType
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.requirements import (
-    LocalProjectRequirement,
     PyPIRequirement,
     URLRequirement,
     VCSRequirement,
@@ -1261,6 +1260,7 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         )
 
     def _sync(self):
+        # type: () -> Result
         if self.options.dry_run and any((self.options.venv, self.passthrough_args)):
             return Error(
                 "Cannot update a venv or execute a command in it when performing a dry run."
@@ -1280,7 +1280,6 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             }
 
             replace_requirements = []  # type: List[Requirement]
-            requirement_configuration = requirement_options.configure(self.options)
             parsed_requirements = requirement_configuration.parse_requirements(
                 network_configuration=pip_configuration.network_configuration
             )
@@ -1293,20 +1292,12 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     )
                     if parsed_requirement.requirement != original_requirement:
                         replace_requirements.append(parsed_requirement.requirement)
-                elif isinstance(parsed_requirement, LocalProjectRequirement):
+                else:
                     return Error(
                         "Cannot update a bare local project directory requirement on {path}.\n"
                         "Try re-phrasing as a PEP-508 direct reference with a file:// URL.\n"
                         "See: https://peps.python.org/pep-0508/".format(
                             path=parsed_requirement.path
-                        )
-                    )
-                else:
-                    return Error(
-                        "Cannot update lock for requirement: {requirement}.\n"
-                        "Try re-phrasing the requirement in a PEP-508 compatible form.\n"
-                        "See: https://peps.python.org/pep-0508/".format(
-                            requirement=parsed_requirement
                         )
                     )
             delete_projects = (
@@ -1322,8 +1313,42 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     )
                 )
         else:
-            # TODO(John Sirois): XXX: create the lock.
-            pass
+            target_configuration = target_options.configure(self.options)
+            if self.options.style == LockStyle.UNIVERSAL:
+                lock_configuration = LockConfiguration(
+                    style=LockStyle.UNIVERSAL,
+                    requires_python=tuple(
+                        str(interpreter_constraint.requires_python)
+                        for interpreter_constraint in target_configuration.interpreter_constraints
+                    ),
+                    target_systems=tuple(self.options.target_systems),
+                )
+            elif self.options.target_systems:
+                return Error(
+                    "The --target-system option only applies to --style {universal} locks.".format(
+                        universal=LockStyle.UNIVERSAL.value
+                    )
+                )
+            else:
+                lock_configuration = LockConfiguration(style=self.options.style)
+
+            targets = try_(
+                self._resolve_targets(
+                    action="creating",
+                    style=self.options.style,
+                    target_configuration=target_configuration,
+                )
+            )
+            lockfile = try_(
+                create(
+                    lock_configuration=lock_configuration,
+                    requirement_configuration=requirement_configuration,
+                    targets=targets,
+                    pip_configuration=pip_configuration,
+                )
+            )
+            with safe_open(self.options.lock, "w") as fp:
+                self._dump_lockfile(lockfile, output=fp)
 
         sync_target = None  # type: Optional[SyncTarget]
         if self.options.venv:
@@ -1385,13 +1410,11 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 result_type=InstallableType.INSTALLED_WHEEL_CHROOT,
             )
         )
-        try_(
-            sync_target.sync(
-                distributions=[
-                    resolved_distribution.distribution
-                    for resolved_distribution in resolve_result.distributions
-                    if resolved_distribution.target == target
-                ],
-                confirm=not self.options.yes,
-            )
+        return sync_target.sync(
+            distributions=[
+                resolved_distribution.distribution
+                for resolved_distribution in resolve_result.distributions
+                if resolved_distribution.target == target
+            ],
+            confirm=not self.options.yes,
         )
