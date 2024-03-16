@@ -9,6 +9,12 @@ requires = ["hatchling"]
 
 [tool.hatch.metadata.hooks.pex-adjust-metadata]
 expand = {"pex_version" = "version"}
+exclude_keys = [
+  # Starting in hatchling 1.22.0 the readme value is the full text of the file pointed at. This
+  # leads to issues since the readme contains inadvertant placeholder strings not intended for
+  # expansion.
+  "readme"
+]
 
 [tool.hatch.build.targets.wheel.hooks.pex-adjust-build]
 # We need this empty table to enable our hook.

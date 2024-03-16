@@ -51,11 +51,12 @@ class AdjustMetadata(MetadataHookInterface):
 
         expand = self.config.get("expand")
         if expand:
+            exclude_keys = frozenset(self.config.get("exclude_keys", ()))
             metadata.update(
                 (
                     key,
                     expand_value(value, **{key: metadata[value] for key, value in expand.items()}),
                 )
                 for key, value in metadata.items()
-                if key != "version"
+                if key != "version" and key not in exclude_keys
             )
