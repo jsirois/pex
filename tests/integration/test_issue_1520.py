@@ -1,6 +1,7 @@
 # Copyright 2021 Pex project contributors.
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
+import json
 import os
 import shutil
 import subprocess
@@ -9,6 +10,7 @@ from textwrap import dedent
 import pytest
 
 from pex.typing import TYPE_CHECKING
+from pex.venv.virtualenv import Virtualenv
 from testing import IS_LINUX, IS_MAC, PY_VER, run_pex_command
 
 if TYPE_CHECKING:
@@ -47,9 +49,11 @@ def test_hermetic_console_scripts(tmpdir):
     with open(constraints, "w") as fp:
         fp.write("protobuf<4")
 
-    run_pex_command(
+    result = run_pex_command(
         args=[
             "--pex-root",
+            pex_root,
+            "--runtime-pex-root",
             pex_root,
             "mypy_protobuf==2.4",
             "--constraints",
@@ -58,19 +62,42 @@ def test_hermetic_console_scripts(tmpdir):
             mypy_protobuf_pex,
             "--venv",
             "prepend",
+            "--seed",
+            "verbose",
         ],
-    ).assert_success()
+    )
+    result.assert_success()
+    venv = Virtualenv(venv_dir=os.path.dirname(json.loads(result.output)["pex"]))
 
-    scripts = [
-        os.path.join(root, f)
-        for root, dirs, files in os.walk(os.path.join(pex_root, "installed_wheels"))
-        for f in files
-        if "protoc-gen-mypy" == f
-    ]
-    assert 1 == len(scripts)
-    with open(scripts[0]) as fp:
-        assert "#!python" == fp.readline().strip()
-        assert "# -*- coding: utf-8 -*-" == fp.readline().strip()
+    def read_protoc_gen_mypy_script_shebang(search_from):
+        # type: (str) -> str
+        scripts = [
+            os.path.join(root, f)
+            for root, dirs, files in os.walk(search_from)
+            for f in files
+            if "protoc-gen-mypy" == f
+        ]
+        assert 1 == len(scripts)
+        with open(scripts[0]) as fp:
+            assert "#!/bin/sh" == fp.readline().strip()
+            assert "'''': pshprs" == fp.readline().strip()
+            sh_shebang_content, sep, _ = fp.read().partition("'''")
+            assert "'''" == sep
+            return sh_shebang_content
+
+    # We expect the chroot reified script should have a special sh re-director $PEX ~shebang which
+    # would fail if copied into the venv.
+    chroot_shebang_content = read_protoc_gen_mypy_script_shebang(
+        search_from=os.path.join(pex_root, "installed_wheels")
+    )
+    assert "$PEX" in chroot_shebang_content
+    assert pex_root not in chroot_shebang_content
+
+    # We expect the venv reified script should have a special sh re-director shebang that forwards to
+    # the too long path of the pex_root venv interpreter.
+    venv_shebang_content = read_protoc_gen_mypy_script_shebang(search_from=venv.bin_dir)
+    assert "$PEX" not in venv_shebang_content
+    assert pex_root in venv_shebang_content
 
     shutil.rmtree(pex_root)
     # This should no-op (since there is no proto sent on stdin) and exit success.

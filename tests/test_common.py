@@ -13,13 +13,12 @@ from pex.common import (
     can_write_dir,
     chmod_plus_x,
     deterministic_walk,
-    is_exe,
-    is_script,
     open_zip,
     safe_open,
     temporary_dir,
     touch,
 )
+from pex.scripts import is_exe, is_script
 from pex.typing import TYPE_CHECKING
 from testing import NonDeterministicWalk
 
@@ -352,8 +351,8 @@ def test_is_script(tmpdir):
         fp.write(b"#!/mystery\n")
         fp.write(bytearray([0xCA, 0xFE, 0xBA, 0xBE]))
     assert is_script(exe)
-    assert is_script(exe, pattern=r"^/mystery")
-    assert not is_script(exe, pattern=r"^python")
+    assert is_script(exe, pattern=br"^/mystery")
+    assert not is_script(exe, pattern=br"^python")
 
     os.chmod(exe, 0o665)
     assert is_script(exe, check_executable=False)

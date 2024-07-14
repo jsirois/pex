@@ -260,6 +260,31 @@ def deterministic_walk(*args, **kwargs):
         dirs.sort()
 
 
+def dir_size(
+    dir_path,  # type: str
+    follow_links=False,  # type: bool
+):
+    # type: (...) -> int
+    """Calculates the size of a directory in bytes including all its children recursively.
+
+    :param dir_path: The directory path to measure the size of.
+    :param follow_links: Whether symlinks to subdirectories should be followed.
+    :return: The total size in bytes of the given directory entry and all its children, recursively.
+    """
+    if not os.path.isdir(dir_path):
+        raise ValueError(
+            "Can only calculate the size of a directory path. Given non-directory: {path}".format(
+                path=dir_path
+            )
+        )
+
+    return sum(
+        os.path.getsize(os.path.join(root, p))
+        for root, dirs, files in os.walk(dir_path, followlinks=follow_links)
+        for p in itertools.chain(dirs, files)
+    ) + os.path.getsize(dir_path)
+
+
 @contextlib.contextmanager
 def temporary_dir(cleanup=True):
     # type: (bool) -> Iterator[str]
@@ -318,7 +343,7 @@ def safe_open(filename, *args, **kwargs):
 
 
 def safe_delete(filename):
-    # type: (str) -> None
+    # type: (Text) -> None
     """Delete a file safely.
 
     If it's not present, no-op.
@@ -378,49 +403,6 @@ def chmod_plus_w(path):
     path_mode &= int("777", 8)
     path_mode |= stat.S_IWRITE
     os.chmod(path, path_mode)
-
-
-def is_exe(path):
-    # type: (str) -> bool
-    """Determines if the given path is a file executable by the current user.
-
-    :param path: The path to check.
-    :return: `True if the given path is a file executable by the current user.
-    """
-    return os.path.isfile(path) and os.access(path, os.R_OK | os.X_OK)
-
-
-def is_script(
-    path,  # type: str
-    pattern=None,  # type: Optional[str]
-    check_executable=True,  # type: bool
-):
-    # type: (...) -> bool
-    """Determines if the given path is a script.
-
-    A script is a file that starts with a shebang (#!...) line.
-
-    :param path: The path to check.
-    :param pattern: An optional pattern to match against the shebang (excluding the leading #!).
-    :param check_executable: Check that the script is executable by the current user.
-    :return: True if the given path is a script.
-    """
-    if check_executable and not is_exe(path):
-        return False
-    with open(path, "rb") as fp:
-        if b"#!" != fp.read(2):
-            return False
-        if not pattern:
-            return True
-        return bool(re.match(pattern, fp.readline().decode("utf-8")))
-
-
-def is_python_script(
-    path,  # type: str
-    check_executable=True,  # type: bool
-):
-    # type: (...) -> bool
-    return is_script(path, pattern=r"(?i)^.*(?:python|pypy)", check_executable=check_executable)
 
 
 def can_write_dir(path):
@@ -789,6 +771,50 @@ def iter_copytree(
     """
     safe_mkdir(dst)
     link = True
+    for is_dir, src_entry, dst_entry in iter_copytree_entries(src, dst, exclude=exclude):
+        try:
+            if symlink:
+                relative_symlink(src_entry, dst_entry)
+            elif is_dir:
+                os.mkdir(dst_entry)
+            else:
+                # We only try to link regular files since linking a symlink on Linux can produce
+                # another symlink, which leaves open the possibility the src_entry target could
+                # later go missing leaving the dst_entry dangling.
+                if link and not os.path.islink(src_entry):
+                    try:
+                        os.link(src_entry, dst_entry)
+                        yield src_entry, dst_entry
+                        continue
+                    except OSError as e:
+                        if e.errno != errno.EXDEV:
+                            raise e
+                        link = False
+                shutil.copy(src_entry, dst_entry)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise e
+        if not is_dir:
+            yield src_entry, dst_entry
+
+    if symlink:
+        # Once we've symlinked the top-level directories and files, we've "copied" everything.
+        return
+
+
+def iter_copytree_entries(
+    src,  # type: Text
+    dst,  # type: Text
+    exclude=(),  # type: Container[Text]
+):
+    # type: (...) -> Iterator[Tuple[bool, Text, Text]]
+    """Iterates the copy entries for copying a src directory tree to dst.
+
+    :param src: The source directory tree to copy.
+    :param dst: The destination location to copy the source tree to.
+    :param exclude: Names (basenames) of files and directories to exclude from copying.
+    :return: An iterator over tuples identifying the copy entries of the form `(is_dir, src, dst)`.
+    """
     for root, dirs, files in os.walk(src, topdown=True, followlinks=True):
         if src == root:
             dirs[:] = [d for d in dirs if d not in exclude]
@@ -799,30 +825,4 @@ def iter_copytree(
         ):
             src_entry = os.path.join(root, path)
             dst_entry = os.path.join(dst, os.path.relpath(src_entry, src))
-            if not is_dir:
-                yield src_entry, dst_entry
-            try:
-                if symlink:
-                    relative_symlink(src_entry, dst_entry)
-                elif is_dir:
-                    os.mkdir(dst_entry)
-                else:
-                    # We only try to link regular files since linking a symlink on Linux can produce
-                    # another symlink, which leaves open the possibility the src_entry target could
-                    # later go missing leaving the dst_entry dangling.
-                    if link and not os.path.islink(src_entry):
-                        try:
-                            os.link(src_entry, dst_entry)
-                            continue
-                        except OSError as e:
-                            if e.errno != errno.EXDEV:
-                                raise e
-                            link = False
-                    shutil.copy(src_entry, dst_entry)
-            except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise e
-
-        if symlink:
-            # Once we've symlinked the top-level directories and files, we've "copied" everything.
-            return
+            yield is_dir, src_entry, dst_entry

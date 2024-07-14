@@ -137,6 +137,7 @@ class PexInfo(object):
             )
         self._pex_info = dict(info) if info else {}  # type: Dict[str, Any]
         self._distributions = self._pex_info.get("distributions", {})  # type: Dict[str, str]
+        self._dist_sizes = self._pex_info.get("dist_sizes", {})  # type: Dict[str, Optional[int]]
 
         # N.B.: InterpreterConstraints is an expensive type to import; so we do so lazily since
         # PexInfo is used during PEX bootstrapping which we want to be fast.
@@ -459,13 +460,24 @@ class PexInfo(object):
         # type: () -> Iterable[str]
         return self._excluded
 
-    def add_distribution(self, location, sha):
+    def add_distribution(
+        self,
+        location,  # type: str
+        sha,  # type: str
+        size=None,  # type: Optional[int]
+    ):
+        # type: (...) -> None
         self._distributions[location] = sha
+        self._dist_sizes[location] = size
 
     @property
     def distributions(self):
         # type: () -> Dict[str, str]
         return self._distributions
+
+    def dist_size(self, location):
+        # type: (str) -> Optional[int]
+        return self._dist_sizes.get(location)
 
     @property
     def raw_pex_root(self):
@@ -561,7 +573,8 @@ class PexInfo(object):
         if not isinstance(other, PexInfo):
             raise TypeError("Cannot merge a %r with PexInfo" % type(other))
         self._pex_info.update(other._pex_info)
-        self._distributions.update(other.distributions)
+        self._distributions.update(other._distributions)
+        self._dist_sizes.update(other._dist_sizes)
         if other.has_interpreter_constraints:
             self._interpreter_constraints = self.interpreter_constraints.merged(
                 other.interpreter_constraints
@@ -577,6 +590,7 @@ class PexInfo(object):
         data["excluded"] = list(self._excluded)
         data["interpreter_constraints"] = [str(ic) for ic in self.interpreter_constraints]
         data["distributions"] = self._distributions.copy()
+        data["dist_sizes"] = self._dist_sizes.copy()
         return data
 
     def dump(self):

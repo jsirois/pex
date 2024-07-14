@@ -17,7 +17,7 @@ from textwrap import dedent
 import pexpect  # type: ignore[import]  # MyPy can't see the types under Python 2.7.
 import pytest
 
-from pex.common import is_exe, safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
+from pex.common import safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
 from pex.compatibility import WINDOWS, commonpath
 from pex.dist_metadata import Distribution, Requirement
 from pex.fetcher import URLFetcher
@@ -27,6 +27,7 @@ from pex.network_configuration import NetworkConfiguration
 from pex.pep_427 import InstallableType
 from pex.pex_info import PexInfo
 from pex.requirements import LogicalLine, PyPIRequirement, parse_requirement_file
+from pex.scripts import is_exe
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
 from pex.variables import ENV, unzip_dir, venv_dir

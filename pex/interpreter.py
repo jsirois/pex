@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from textwrap import dedent
 
 from pex import third_party
-from pex.common import is_exe, safe_mkdtemp, safe_rmtree
+from pex.common import safe_mkdtemp, safe_rmtree
 from pex.executor import Executor
 from pex.jobs import Job, Retain, SpawnedJob, execute_parallel
 from pex.orderedset import OrderedSet
@@ -27,6 +27,7 @@ from pex.pep_508 import MarkerEnvironment
 from pex.platforms import Platform
 from pex.pth import iter_pth_paths
 from pex.pyenv import Pyenv
+from pex.scripts import create_sh_python_redirector_shebang, is_exe
 from pex.third_party.packaging import __version__ as packaging_version
 from pex.third_party.packaging import tags
 from pex.tracer import TRACER
@@ -1546,25 +1547,13 @@ def create_shebang(
     if len(shebang) + 1 <= max_shebang_length:
         return shebang
 
-    # This trick relies on /bin/sh being ubiquitous and the concordance of:
-    # 1. Python: triple quoted strings plus allowance for free-floating string values in
-    #    python files.
-    # 2. sh: Any number of pairs of `'` evaluating away when followed immediately by a
-    #    command string (`''command` -> `command`) and lazy parsing allowing for invalid sh
-    #    content immediately following an exec line.
-    # The end result is a file that is both a valid sh script with a short shebang and a
-    # valid Python program.
-    return (
-        dedent(
+    return create_sh_python_redirector_shebang(
+        sh_script_content=dedent(
             """\
-            #!/bin/sh
             # N.B.: This python script executes via a /bin/sh re-exec as a hack to work around a
             # potential maximum shebang length of {max_shebang_length} bytes on this system which
             # the python interpreter `exec`ed below would violate.
-            ''''exec {python} "$0" "$@"
-            '''
+            exec {python} "$0" "$@"
             """
-        )
-        .format(max_shebang_length=max_shebang_length, python=python)
-        .strip()
+        ).format(max_shebang_length=max_shebang_length, python=python)
     )

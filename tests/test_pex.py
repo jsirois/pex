@@ -647,8 +647,9 @@ def test_execute_interpreter_dashc_program_with_python_options():
 
 def test_execute_interpreter_dashm_module():
     # type: () -> None
-    with temporary_dir() as pex_chroot:
-        pex_builder = PEXBuilder(path=pex_chroot)
+    with temporary_dir() as pex_root:
+        pex_builder = PEXBuilder()
+        pex_builder.info.pex_root = pex_root
         pex_builder.add_source(None, "foo/__init__.py")
         with tempfile.NamedTemporaryFile(mode="w") as fp:
             fp.write(
@@ -664,7 +665,7 @@ def test_execute_interpreter_dashm_module():
             fp.flush()
             pex_builder.add_source(fp.name, "foo/bar.py")
         pex_builder.freeze()
-        pex = PEX(pex_chroot)
+        pex = PEX(pex_builder.path())
         process = pex.run(
             args=["-m", "foo.bar", "one", "two"],
             stdout=subprocess.PIPE,
@@ -675,15 +676,16 @@ def test_execute_interpreter_dashm_module():
 
         assert 0 == process.returncode
         assert "{} one two\n".format(
-            os.path.realpath(os.path.join(pex_chroot, "foo/bar.py"))
+            os.path.join(pex_root, "user_code", pex_builder.info.code_hash, "foo/bar.py")
         ) == stdout.decode("utf-8")
         assert b"" == stderr
 
 
 def test_execute_interpreter_dashm_module_with_python_options():
     # type: () -> None
-    with temporary_dir() as pex_chroot:
-        pex_builder = PEXBuilder(path=pex_chroot)
+    with temporary_dir() as pex_root:
+        pex_builder = PEXBuilder()
+        pex_builder.info.pex_root = pex_root
         pex_builder.add_source(None, "foo/__init__.py")
         # To test with interpreter options we add an "assert False"
         # that we would expect to fail.
@@ -704,7 +706,7 @@ def test_execute_interpreter_dashm_module_with_python_options():
             fp.flush()
             pex_builder.add_source(fp.name, "foo/bar.py")
         pex_builder.freeze()
-        pex = PEX(pex_chroot)
+        pex = PEX(pex_builder.path())
         process = pex.run(
             args=["-O", "-m", "foo.bar", "one", "two"],
             stdout=subprocess.PIPE,
@@ -715,7 +717,7 @@ def test_execute_interpreter_dashm_module_with_python_options():
 
         assert b"" == stderr
         assert "{} one two\n".format(
-            os.path.realpath(os.path.join(pex_chroot, "foo/bar.py"))
+            os.path.join(pex_root, "user_code", pex_builder.info.code_hash, "foo/bar.py")
         ) == stdout.decode("utf-8")
         assert 0 == process.returncode
 

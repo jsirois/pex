@@ -7,7 +7,7 @@ import subprocess
 
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonInterpreter
-from pex.pep_376 import InstalledWheel
+from pex.pep_427 import InstalledWheel
 from pex.pex_info import PexInfo
 from pex.typing import TYPE_CHECKING
 from pex.venv.virtualenv import Virtualenv
@@ -75,10 +75,12 @@ def test_data_files(tmpdir):
             if f not in exclude
         )
 
-    # We exclude the REQUESTED .dist-info metadata file which Pip installs, but we currently do not.
-    # This file is not required as originally spelled out in PEP-376
+    # We exclude the REQUESTED .dist-info metadata file which Pip installs correctly, but we do not
+    # currently install correctly. This file is not required as originally spelled out in PEP-376
     # (https://peps.python.org/pep-0376/#one-dist-info-directory-per-installed-distribution):
     # "The METADATA, RECORD and INSTALLER files are mandatory, while REQUESTED may be missing."
     # This remains true in the modern spec as well. See:
     # https://packaging.python.org/en/latest/specifications/recording-installed-packages/#the-dist-info-directory
-    assert recursive_listing(pip_venv, exclude={"REQUESTED"}) == recursive_listing(pex_venv)
+    assert recursive_listing(pip_venv, exclude={"REQUESTED"}) == recursive_listing(
+        pex_venv, exclude={"REQUESTED"}
+    )

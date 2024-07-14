@@ -23,9 +23,8 @@ from pex.fingerprinted_distribution import FingerprintedDistribution
 from pex.jobs import Raise, SpawnedJob, execute_parallel, iter_map_parallel
 from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
-from pex.pep_376 import InstalledWheel, LoadError
 from pex.pep_425 import CompatibilityTags
-from pex.pep_427 import InstallableType, WheelError, install_wheel_chroot
+from pex.pep_427 import InstallableType, InstalledWheel, LoadError, WheelError, install_wheel_chroot
 from pex.pep_503 import ProjectName
 from pex.pex_info import PexInfo
 from pex.pip.download_observer import DownloadObserver

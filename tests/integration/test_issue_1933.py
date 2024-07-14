@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from pex.common import is_exe
+from pex.scripts import is_exe
 from pex.typing import TYPE_CHECKING
 from testing import IS_LINUX_ARM64, IS_MAC_ARM64, run_pex_command
 

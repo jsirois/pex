@@ -7,7 +7,7 @@ from textwrap import dedent
 
 import pytest
 
-from pex.common import is_exe
+from pex.scripts import is_exe
 from pex.typing import TYPE_CHECKING
 from testing import run_pex_command
 

@@ -61,10 +61,6 @@ def test_installed_file_path_normalization_noop(
 
     def assert_noop(interpreter=None):
         # type: (Optional[PythonInterpreter]) -> None
-        assert "foo/bar" == InstalledFile.normalized_path("foo/bar", interpreter=interpreter)
-        assert "foo/python2.0" == InstalledFile.normalized_path(
-            "foo/python2.0", interpreter=interpreter
-        )
         assert "foo/bar" == InstalledFile.denormalized_path("foo/bar", interpreter=interpreter)
 
     assert_noop()
@@ -77,13 +73,6 @@ def test_installed_file_path_normalization_nominal(
     py310,  # type: PythonInterpreter
 ):
     # type: (...) -> None
-
-    assert "foo/pythonX.Y/bar" == InstalledFile.normalized_path(
-        "foo/python3.8/bar", interpreter=py38
-    )
-    assert "foo/pythonX.Y/bar" == InstalledFile.normalized_path(
-        "foo/python3.10/bar", interpreter=py310
-    )
 
     assert "foo/python3.8/bar" == InstalledFile.denormalized_path(
         "foo/pythonX.Y/bar", interpreter=py38

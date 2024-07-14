@@ -219,14 +219,7 @@ def test_shebang_length_limit_runtime(
             .startswith(too_deep_pex_root)
         )
 
-    if "--venv" in execution_mode_args:
-        # Running the venv pex directly should fail since the shebang length is too long.
-        with pytest.raises(OSError) as exc_info:
-            subprocess.check_call(args=[seeded_pex] + test_pex_args)
-        assert exc_info.value.errno == errno.ENOEXEC
-    else:
-        assert_pex_works(seeded_pex)
-
+    assert_pex_works(seeded_pex)
     assert_pex_works(pex)
 
 

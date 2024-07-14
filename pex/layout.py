@@ -11,13 +11,14 @@ from contextlib import contextmanager
 from pex.atomic_directory import atomic_directory
 from pex.common import (
     PermPreservingZipFile,
-    is_script,
+    dir_size,
     open_zip,
     safe_copy,
     safe_mkdir,
     safe_mkdtemp,
 )
 from pex.enum import Enum
+from pex.scripts import is_script
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.variables import unzip_dir
@@ -127,7 +128,6 @@ class _Layout(object):
         self,
         dest_dir,  # type: str
         dist_relpath,  # type: str
-        is_wheel_file,  # type: bool
     ):
         # type: (...) -> None
         raise NotImplementedError()
@@ -167,10 +167,9 @@ def _install_distribution(
     # type: (...) -> str
 
     location, sha = distribution_info
-    is_wheel_file = pex_info.deps_are_wheel_files
     spread_dest = os.path.join(pex_info.install_cache, sha, location)
     dist_relpath = os.path.join(DEPS_DIR, location)
-    source = None if is_wheel_file else layout.dist_strip_prefix(location)
+    source = None if pex_info.deps_are_wheel_files else layout.dist_strip_prefix(location)
     symlink_src = os.path.relpath(
         spread_dest,
         os.path.join(install_to, os.path.dirname(dist_relpath)),
@@ -178,12 +177,34 @@ def _install_distribution(
     symlink_dest = os.path.join(work_dir, dist_relpath)
 
     with atomic_directory(spread_dest, source=source) as spread_chroot:
-        if not spread_chroot.is_finalized():
-            layout.extract_dist(
-                dest_dir=spread_chroot.work_dir,
-                dist_relpath=dist_relpath,
-                is_wheel_file=is_wheel_file,
+        if spread_chroot.is_finalized():
+            TRACER.log(
+                "The {distribution} distribution is already installed.".format(
+                    distribution=dist_relpath
+                ),
+                V=2,
             )
+        else:
+            from pex.pep_427 import InstalledWheel, install_wheel_chroot
+
+            dest_dir = spread_chroot.work_dir
+            if pex_info.deps_are_wheel_files:
+                with TRACER.timed(
+                    "Installing wheel file {distribution}".format(distribution=dist_relpath)
+                ):
+                    install_wheel_chroot(layout.wheel_file_path(dist_relpath), dest_dir)
+            else:
+                with TRACER.timed(
+                    "Installing zipped wheel chroot {distribution}".format(
+                        distribution=dist_relpath,
+                    )
+                ):
+                    layout.extract_dist(dest_dir=dest_dir, dist_relpath=dist_relpath)
+                    dist_prefix = layout.dist_strip_prefix(location)
+                    dist_path = os.path.join(dest_dir, dist_prefix) if dist_prefix else dest_dir
+                    installed_wheel = InstalledWheel.maybe_load(dist_path)
+                    if installed_wheel and installed_wheel.supports_sh_python_redirector_scripts:
+                        install_wheel_chroot(dist_path, dist_path)
 
     safe_mkdir(os.path.dirname(symlink_dest))
     os.symlink(symlink_src, symlink_dest)
@@ -199,8 +220,7 @@ def _ensure_distributions_installed_serial(
     # type: (...) -> None
 
     for item in pex_info.distributions.items():
-        with TRACER.timed("Installing {wheel}".format(wheel=item[0]), V=2):
-            _install_distribution(item, layout, pex_info, work_dir, install_to)
+        _install_distribution(item, layout, pex_info, work_dir, install_to)
 
 
 def _ensure_distributions_installed_parallel(
@@ -231,8 +251,11 @@ def _ensure_distributions_installed_parallel(
         verb="install",
         verb_past="installed",
         max_jobs=max_jobs,
-        costing_function=lambda item: layout.dist_size(
-            os.path.join(DEPS_DIR, item[0]), is_wheel_file=pex_info.deps_are_wheel_files
+        costing_function=lambda item: (
+            pex_info.dist_size(item[0])
+            or layout.dist_size(
+                os.path.join(DEPS_DIR, item[0]), is_wheel_file=pex_info.deps_are_wheel_files
+            )
         ),
     )
 
@@ -260,7 +283,10 @@ def _ensure_distributions_installed(
     install_serial = dist_count == 1 or pex_info.max_install_jobs == 1
     if not install_serial and pex_info.max_install_jobs == -1:
         total_size = sum(
-            layout.dist_size(os.path.join(DEPS_DIR, location), pex_info.deps_are_wheel_files)
+            (
+                pex_info.dist_size(location)
+                or layout.dist_size(os.path.join(DEPS_DIR, location), pex_info.deps_are_wheel_files)
+            )
             for location in pex_info.distributions
         )
         average_distribution_size = total_size // dist_count
@@ -303,72 +329,63 @@ def _ensure_installed(
     pex_hash,  # type: str
 ):
     # type: (...) -> str
-    if layout.type is Layout.LOOSE:
-        from pex.pex_info import PexInfo
 
-        pex_info = PexInfo.from_pex(layout.path)
-        if not pex_info.distributions or not pex_info.deps_are_wheel_files:
-            # A loose PEX with no dependencies or dependencies that are pre-installed wheel chroots
-            # is in the canonical form of a PEX executable zipapp already and needs no install.
-            return layout.path
+    pex = layout.path
+    install_to = unzip_dir(pex_root=pex_root, pex_hash=pex_hash)
+    with atomic_directory(install_to) as chroot:
+        if not chroot.is_finalized():
+            from pex.variables import ENV
 
-    with TRACER.timed("Laying out {}".format(layout)):
-        pex = layout.path
-        install_to = unzip_dir(pex_root=pex_root, pex_hash=pex_hash)
-        with atomic_directory(install_to) as chroot:
-            if not chroot.is_finalized():
-                from pex.variables import ENV
+            with ENV.patch(PEX_ROOT=pex_root), TRACER.timed(
+                "Installing {} to {}".format(pex, install_to)
+            ):
+                from pex.pex_info import PexInfo
 
-                with ENV.patch(PEX_ROOT=pex_root), TRACER.timed(
-                    "Installing {} to {}".format(pex, install_to)
-                ):
-                    from pex.pex_info import PexInfo
+                pex_info = PexInfo.from_pex(pex)
+                pex_info.update(PexInfo.from_env())
 
-                    pex_info = PexInfo.from_pex(pex)
-                    pex_info.update(PexInfo.from_env())
+                bootstrap_cache = pex_info.bootstrap_cache
+                if bootstrap_cache is None:
+                    raise AssertionError(
+                        "Expected bootstrap_cache to be populated for {}.".format(layout)
+                    )
+                code_hash = pex_info.code_hash
+                if code_hash is None:
+                    raise AssertionError(
+                        "Expected code_hash to be populated for {}.".format(layout)
+                    )
 
-                    bootstrap_cache = pex_info.bootstrap_cache
-                    if bootstrap_cache is None:
-                        raise AssertionError(
-                            "Expected bootstrap_cache to be populated for {}.".format(layout)
-                        )
-                    code_hash = pex_info.code_hash
-                    if code_hash is None:
-                        raise AssertionError(
-                            "Expected code_hash to be populated for {}.".format(layout)
-                        )
+                with atomic_directory(
+                    bootstrap_cache, source=layout.bootstrap_strip_prefix()
+                ) as bootstrap_zip_chroot:
+                    if not bootstrap_zip_chroot.is_finalized():
+                        layout.extract_bootstrap(bootstrap_zip_chroot.work_dir)
+                os.symlink(
+                    os.path.join(os.path.relpath(bootstrap_cache, install_to)),
+                    os.path.join(chroot.work_dir, BOOTSTRAP_DIR),
+                )
 
-                    with atomic_directory(
-                        bootstrap_cache, source=layout.bootstrap_strip_prefix()
-                    ) as bootstrap_zip_chroot:
-                        if not bootstrap_zip_chroot.is_finalized():
-                            layout.extract_bootstrap(bootstrap_zip_chroot.work_dir)
+                _ensure_distributions_installed(
+                    layout=layout,
+                    pex_info=pex_info,
+                    work_dir=chroot.work_dir,
+                    install_to=install_to,
+                )
+
+                code_dest = os.path.join(pex_info.zip_unsafe_cache, code_hash)
+                with atomic_directory(code_dest) as code_chroot:
+                    if not code_chroot.is_finalized():
+                        layout.extract_code(code_chroot.work_dir)
+                for path in os.listdir(code_dest):
                     os.symlink(
-                        os.path.join(os.path.relpath(bootstrap_cache, install_to)),
-                        os.path.join(chroot.work_dir, BOOTSTRAP_DIR),
+                        os.path.join(os.path.relpath(code_dest, install_to), path),
+                        os.path.join(chroot.work_dir, path),
                     )
 
-                    _ensure_distributions_installed(
-                        layout=layout,
-                        pex_info=pex_info,
-                        work_dir=chroot.work_dir,
-                        install_to=install_to,
-                    )
-
-                    code_dest = os.path.join(pex_info.zip_unsafe_cache, code_hash)
-                    with atomic_directory(code_dest) as code_chroot:
-                        if not code_chroot.is_finalized():
-                            layout.extract_code(code_chroot.work_dir)
-                    for path in os.listdir(code_dest):
-                        os.symlink(
-                            os.path.join(os.path.relpath(code_dest, install_to), path),
-                            os.path.join(chroot.work_dir, path),
-                        )
-
-                    layout.extract_pex_info(chroot.work_dir)
-                    layout.extract_main(chroot.work_dir)
-                    layout.record(chroot.work_dir)
-        return install_to
+                layout.extract_pex_info(chroot.work_dir)
+                layout.extract_main(chroot.work_dir)
+                layout.record(chroot.work_dir)
+    return install_to
 
 
 class _ZipAppPEX(_Layout):
@@ -462,17 +479,11 @@ class _ZipAppPEX(_Layout):
         self,
         dest_dir,  # type: str
         dist_relpath,  # type: str
-        is_wheel_file,  # type: bool
     ):
         # type: (...) -> None
-        if is_wheel_file:
-            from pex.pep_427 import install_wheel_chroot
-
-            install_wheel_chroot(self.wheel_file_path(dist_relpath), dest_dir)
-        else:
-            for name in self.names:
-                if name.startswith(dist_relpath) and not name.endswith("/"):
-                    self.zfp.extract(name, dest_dir)
+        for name in self.names:
+            if name.startswith(dist_relpath) and not name.endswith("/"):
+                self.zfp.extract(name, dest_dir)
 
     def wheel_file_path(self, dist_relpath):
         # type: (str) -> str
@@ -522,19 +533,11 @@ class _PackedPEX(_Layout):
         self,
         dest_dir,  # type: str
         dist_relpath,  # type: str
-        is_wheel_file,  # type: bool
     ):
         # type: (...) -> None
         dist_path = self.wheel_file_path(dist_relpath)
-        if is_wheel_file:
-            from pex.pep_427 import install_wheel_chroot
-
-            with TRACER.timed("Installing wheel file {}".format(dist_relpath)):
-                install_wheel_chroot(dist_path, dest_dir)
-        else:
-            with TRACER.timed("Installing zipped wheel install {}".format(dist_relpath)):
-                with open_zip(dist_path) as zfp:
-                    zfp.extractall(dest_dir)
+        with open_zip(dist_path) as zfp:
+            zfp.extractall(dest_dir)
 
     def wheel_file_path(self, dist_relpath):
         # type: (str) -> str
@@ -588,24 +591,22 @@ class _LoosePEX(_Layout):
         dist_relpath,  # type: str
         is_wheel_file,  # type: bool
     ):
-        assert (
-            is_wheel_file
-        ), "Expected loose layout install to be skipped when deps are pre-installed wheel chroots."
-        return os.path.getsize(os.path.join(self._path, dist_relpath))
+        dist_path = os.path.join(self._path, dist_relpath)
+        return os.path.getsize(dist_path) if is_wheel_file else dir_size(dist_path)
 
     def extract_dist(
         self,
         dest_dir,
         dist_relpath,  # type: str
-        is_wheel_file,  # type: bool
     ):
-        assert (
-            is_wheel_file
-        ), "Expected loose layout install to be skipped when deps are pre-installed wheel chroots."
-        from pex.pep_427 import install_wheel_chroot
-
-        with TRACER.timed("Installing wheel file {}".format(dist_relpath)):
-            install_wheel_chroot(self.wheel_file_path(dist_relpath), dest_dir)
+        # type: (...) -> None
+        dist_dir = os.path.join(self._path, dist_relpath)
+        for root, dirs, files in os.walk(dist_dir):
+            rel_root = os.path.relpath(root, dist_dir)
+            for d in dirs:
+                safe_mkdir(os.path.join(dest_dir, rel_root, d))
+            for f in files:
+                safe_copy(os.path.join(root, f), os.path.join(dest_dir, rel_root, f))
 
     def wheel_file_path(self, dist_relpath):
         # type: (str) -> str
@@ -665,5 +666,5 @@ def ensure_installed(
     Returns the path of the installed PEX or `None` if the PEX needed no installation and can be
     executed directly.
     """
-    with identify_layout(pex) as layout:
+    with identify_layout(pex) as layout, TRACER.timed("Laying out {}".format(layout)):
         return _ensure_installed(layout, pex_root, pex_hash)

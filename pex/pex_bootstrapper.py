@@ -542,7 +542,7 @@ def ensure_venv(
                     # modification of the source loose PEX.
                     symlink = pex.layout != Layout.LOOSE and not pex_info.venv_site_packages_copies
 
-                    shebang = installer.populate_venv_from_pex(
+                    installer.populate_venv_from_pex(
                         virtualenv,
                         pex,
                         bin_path=pex_info.venv_bin_path,
@@ -556,25 +556,6 @@ def ensure_venv(
                         symlink=symlink,
                         hermetic_scripts=pex_info.venv_hermetic_scripts,
                     )
-
-                    # There are popular Linux distributions with shebang length limits
-                    # (BINPRM_BUF_SIZE in /usr/include/linux/binfmts.h) set at 128 characters, so
-                    # we warn in the _very_ unlikely case that our shortened shebang is longer than
-                    # this.
-                    if len(shebang) > 128:
-                        pex_warnings.warn(
-                            "The venv for {pex} at {venv} has script shebangs of {shebang!r} with "
-                            "{count} characters. On some systems this may be too long and cause "
-                            "problems running the venv scripts. You may be able adjust PEX_ROOT "
-                            "from {pex_root} to a shorter path as a work-around.".format(
-                                pex=pex_path,
-                                venv=venv_dir,
-                                shebang=shebang,
-                                count=len(shebang),
-                                pex_root=pex_info.pex_root,
-                            )
-                        )
-
                     break
 
     return VenvPex(venv_dir, hermetic_scripts=pex_info.venv_hermetic_scripts)
