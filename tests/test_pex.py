@@ -17,9 +17,10 @@ import pytest
 
 from pex import resolver
 from pex.common import environment_as, safe_mkdir, safe_open, temporary_dir
-from pex.compatibility import PY2, WINDOWS, commonpath, to_bytes
+from pex.compatibility import PY2, commonpath, to_bytes
 from pex.dist_metadata import Distribution
 from pex.interpreter import PythonIdentity, PythonInterpreter
+from pex.os import WINDOWS
 from pex.pex import PEX, IsolatedSysPath
 from pex.pex_builder import PEXBuilder
 from pex.pex_info import PexInfo

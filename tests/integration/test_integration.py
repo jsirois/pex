@@ -20,13 +20,14 @@ import pytest
 from pex import targets
 from pex.cache.dirs import CacheDir, InterpreterDir
 from pex.common import environment_as, safe_mkdir, safe_open, safe_rmtree, temporary_dir, touch
-from pex.compatibility import WINDOWS, commonpath
+from pex.compatibility import commonpath
 from pex.dist_metadata import Distribution, Requirement, is_wheel
 from pex.executables import is_exe
 from pex.fetcher import URLFetcher
 from pex.interpreter import PythonInterpreter
 from pex.layout import Layout
 from pex.network_configuration import NetworkConfiguration
+from pex.os import WINDOWS
 from pex.pep_427 import InstallableType
 from pex.pex_info import PexInfo
 from pex.pip.version import PipVersion

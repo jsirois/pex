@@ -7,6 +7,8 @@ import os
 import sys
 from argparse import ArgumentParser
 
+from pex.sysconfig import SCRIPT_DIR
+
 # When running under MyPy, this will be set to True for us automatically; so we can use it as a
 # typing module import guard to protect Python 2 imports of typing - which is not normally available
 # in Python 2.
@@ -27,7 +29,7 @@ def write_bindings(
         print("PYTHON=" + sys.executable, file=fp)
         print("PEX=" + pex, file=fp)
         if venv_dir:
-            print("VENV_BIN_DIR_PLUS_SEP=" + os.path.join(venv_dir, "bin") + os.path.sep, file=fp)
+            print("VENV_BIN_DIR_PLUS_SEP=" + os.path.join(venv_dir, SCRIPT_DIR) + os.path.sep, file=fp)
 
 
 if __name__ == "__main__":

@@ -17,11 +17,13 @@ from pex.dist_metadata import Distribution
 from pex.environment import PEXEnvironment
 from pex.executables import chmod_plus_x
 from pex.orderedset import OrderedSet
+from pex.os import WINDOWS
 from pex.pep_376 import InstalledWheel
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pex import PEX
 from pex.result import Error
+from pex.sysconfig import SCRIPT_DIR
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING
 from pex.util import CacheHelper
@@ -304,7 +306,7 @@ def populate_venv_distributions(
             venv=venv,
             distributions=distributions,
             venv_python=provenance.target_python,
-            copy_mode=copy_mode,
+            copy_mode=CopyMode.LINK if copy_mode is CopyMode.SYMLINK and WINDOWS else copy_mode,
             hermetic_scripts=hermetic_scripts,
             top_level_source_packages=top_level_source_packages,
         )
@@ -345,7 +347,7 @@ def populate_venv_sources(
 
 def _iter_top_level_packages(
     path,  # type: str
-    excludes=("bin", "__pycache__"),  # type: Container[str]
+    excludes=(SCRIPT_DIR, "__pycache__"),  # type: Container[str]
 ):
     # type: (...) -> Iterator[str]
     for name in os.listdir(path):
@@ -418,11 +420,11 @@ def _populate_legacy_dist(
     # just 1 top-level module, we keep .pyc anchored to their associated dists when shared
     # and accept the cost of re-compiling top-level modules in each venv that uses them.
     for src, dst in iter_copytree(
-        src=dist.location, dst=dest_dir, exclude=("bin", "__pycache__"), copy_mode=copy_mode
+        src=dist.location, dst=dest_dir, exclude=(SCRIPT_DIR, "__pycache__"), copy_mode=copy_mode
     ):
         yield src, dst
 
-    dist_bin_dir = os.path.join(dist.location, "bin")
+    dist_bin_dir = os.path.join(dist.location, SCRIPT_DIR)
     if os.path.isdir(dist_bin_dir):
         for src, dst in iter_copytree(src=dist_bin_dir, dst=bin_dir, copy_mode=copy_mode):
             yield src, dst
@@ -592,8 +594,8 @@ def _populate_first_party(
             print(
                 "import os, sys; "
                 "sys.path.extend("
-                "entry for entry in os.environ.get('{env_var}', '').split(':') if entry"
-                ")".format(env_var=env_var),
+                "entry for entry in os.environ.get('{env_var}', '').split({pathsep!r}) if entry"
+                ")".format(env_var=env_var, pathsep=os.pathsep),
                 file=fp,
             )
 
@@ -613,6 +615,7 @@ def _populate_first_party(
                 if __name__ == "__main__":
                     boot(
                         shebang_python={shebang_python!r},
+                        venv_bin_dir={venv_bin_dir!r},
                         bin_path={bin_path!r},
                         strip_pex_env={strip_pex_env!r},
                         inject_env={inject_env!r},
@@ -626,6 +629,7 @@ def _populate_first_party(
                 shebang=shebang,
                 code=inspect.getsource(venv_pex).strip(),
                 shebang_python=venv_python,
+                venv_bin_dir=SCRIPT_DIR,
                 bin_path=bin_path,
                 strip_pex_env=pex_info.strip_pex_env,
                 inject_env=tuple(pex_info.inject_env.items()),

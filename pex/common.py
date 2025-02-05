@@ -24,6 +24,7 @@ from zipfile import ZipFile, ZipInfo
 
 from pex.enum import Enum
 from pex.executables import chmod_plus_x
+from pex.fs import safe_rename
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
@@ -119,7 +120,7 @@ def safe_copy(source, dest, overwrite=False):
         # type: () -> None
         temp_dest = dest + uuid4().hex
         shutil.copy(source, temp_dest)
-        os.rename(temp_dest, dest)
+        safe_rename(temp_dest, dest)
 
     # If the platform supports hard-linking, use that and fall back to copying.
     # Windows does not support hard-linking.

@@ -31,6 +31,7 @@ from pex.interpreter import (
     create_shebang,
 )
 from pex.orderedset import OrderedSet
+from pex.sysconfig import SCRIPT_DIR, script_name
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
 from pex.util import named_temporary_file
@@ -393,8 +394,8 @@ class Virtualenv(object):
         # type: (...) -> None
         self._venv_dir = venv_dir
         self._custom_prompt = custom_prompt
-        self._bin_dir = os.path.join(venv_dir, "bin")
-        python_exe_path = os.path.join(self._bin_dir, python_exe_name)
+        self._bin_dir = os.path.join(venv_dir, SCRIPT_DIR)
+        python_exe_path = os.path.join(self._bin_dir, script_name(python_exe_name))
         try:
             self._interpreter = PythonInterpreter.from_binary(python_exe_path)
         except PythonInterpreter.Error as e:
@@ -451,7 +452,7 @@ class Virtualenv(object):
 
     def bin_path(self, *components):
         # type: (*str) -> str
-        return os.path.join(self._bin_dir, *components)
+        return script_name(os.path.join(self._bin_dir, *components))
 
     @property
     def bin_dir(self):
