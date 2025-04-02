@@ -175,9 +175,14 @@ class FileArtifact(Artifact):
         # type: () -> bool
         return is_sdist(self.filename)
 
+    @property
+    def is_wheel(self):
+        # type: () -> bool
+        return is_wheel(self.filename)
+
     def parse_tags(self):
         # type: () -> Iterator[tags.Tag]
-        if is_wheel(self.filename):
+        if self.is_wheel:
             for tag in CompatibilityTags.from_wheel(self.filename):
                 yield tag
 

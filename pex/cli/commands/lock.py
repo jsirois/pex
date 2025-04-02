@@ -12,7 +12,7 @@ from collections import OrderedDict, deque
 from multiprocessing.pool import ThreadPool
 from operator import attrgetter
 
-from pex import dependency_configuration, pex_warnings
+from pex import dependency_configuration, pex_warnings, toml
 from pex.argparse import HandleBoolAction
 from pex.build_system import pep_517
 from pex.cli.command import BuildTimeCommand
@@ -52,7 +52,7 @@ from pex.resolve.locked_resolve import (
     TargetSystem,
     VCSArtifact,
 )
-from pex.resolve.lockfile import json_codec, requires_dist
+from pex.resolve.lockfile import json_codec, pep_751, requires_dist
 from pex.resolve.lockfile.create import create
 from pex.resolve.lockfile.model import Lockfile
 from pex.resolve.lockfile.subset import subset
@@ -110,7 +110,7 @@ class ExportFormat(Enum["ExportFormat.Value"]):
 
     PIP = Value("pip")
     PIP_NO_HASHES = Value("pip-no-hashes")
-    PEP_665 = Value("pep-665")
+    PEP_751 = Value("pep-751")
 
 
 ExportFormat.seal()
@@ -645,10 +645,7 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
             default=ExportFormat.PIP,
             choices=ExportFormat.values(),
             type=ExportFormat.for_value,
-            help=(
-                "The format to export the lock to. Currently only the Pip requirements file "
-                "formats (using `--hash` or bare) are supported."
-            ),
+            help="The format to export the lock to.",
         )
         export_parser.add_argument(
             "--sort-by",
@@ -1106,22 +1103,34 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
 
     def _export(self, requirement_configuration=RequirementConfiguration()):
         # type: (RequirementConfiguration) -> Result
-        supported_formats = ExportFormat.PIP, ExportFormat.PIP_NO_HASHES
-        if self.options.format not in supported_formats:
-            return Error(
-                "Only the Pip lock formats are supported currently. "
-                "Choose one of: {choices}".format(choices=" or ".join(map(str, supported_formats)))
-            )
 
         lockfile_path, lock_file = self._load_lockfile()
         pip_configuration = resolver_options.create_pip_configuration(
             self.options, use_system_time=False
         )
-        targets = target_options.configure(
+        target_configuration = target_options.configure(
             self.options, pip_configuration=pip_configuration
-        ).resolve_targets()
+        )
+        if (
+            self.options.format is ExportFormat.PEP_751
+            and lock_file.style is LockStyle.UNIVERSAL
+            and not target_configuration.platforms
+            and not target_configuration.complete_platforms
+            and not target_configuration.interpreter_configuration.pythons
+        ):
+            if self.options.format is ExportFormat.PEP_751:
+                with self.output(self.options, binary=True) as toml_output:
+                    toml.dump(pep_751.convert(lock_file), toml_output)
+            return Ok()
+        elif self.options.format is ExportFormat.PEP_751:
+            raise NotImplementedError(
+                "Can only export to PEP-751 pylock.toml format for universal locks."
+            )
+
+        targets = target_configuration.resolve_targets()
+
         target = targets.require_unique_target(
-            purpose="exporting a lock in the {pip!r} format".format(pip=ExportFormat.PIP)
+            purpose="exporting a lock in the {format!r} format".format(format=self.options.format)
         )
 
         with TRACER.timed("Selecting locks for {target}".format(target=target)):
@@ -1208,17 +1217,17 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                 ),
                 file=sys.stderr,
             )
-        with self.output(self.options) as output:
+        with self.output(self.options) as requirements_txt_output:
             pins = fingerprints_by_pin.keys()  # type: Iterable[Pin]
             if self.options.sort_by == ExportSortBy.PROJECT_NAME:
                 pins = sorted(pins, key=attrgetter("project_name.normalized"))
             for pin in pins:
                 requirement = requirement_by_pin[pin]
                 if self.options.format is ExportFormat.PIP_NO_HASHES:
-                    print(requirement, file=output)
+                    print(requirement, file=requirements_txt_output)
                 else:
                     fingerprints = fingerprints_by_pin[pin]
-                    output.write(
+                    requirements_txt_output.write(
                         "{requirement} \\\n"
                         "  {hashes}\n".format(
                             requirement=requirement,

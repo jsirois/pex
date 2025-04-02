@@ -4,12 +4,11 @@
 from __future__ import absolute_import
 
 import sys
-from io import BytesIO
 
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Any, Dict, Union
+    from typing import IO, Any, Dict, Union
 
 if sys.version_info[:2] < (3, 7):
     from pex.third_party.toml import TomlDecodeError as _TomlDecodeError
@@ -19,7 +18,7 @@ if sys.version_info[:2] < (3, 7):
     from pex.third_party.toml import loads as _loads
 
     def load(source):
-        # type: (Union[str, BytesIO]) -> Any
+        # type: (Union[str, IO[bytes]]) -> Any
         if isinstance(source, str):
             return _load(source)
         else:
@@ -27,7 +26,7 @@ if sys.version_info[:2] < (3, 7):
 
     def dump(
         data,  # type: Dict[str, Any]
-        fp,  # type: BytesIO
+        fp,  # type: IO[bytes]
     ):
         # type: (...) -> None
         fp.write(_dumps(data).decode("utf-8"))
@@ -40,7 +39,7 @@ else:
     from pex.third_party.tomli_w import dumps as _dumps
 
     def load(source):
-        # type: (Union[str, BytesIO]) -> Any
+        # type: (Union[str, IO[bytes]]) -> Any
         if isinstance(source, str):
             with open(source, "rb") as fp:
                 return _load(fp)
@@ -49,7 +48,7 @@ else:
 
     def dump(
         data,  # type: Dict[str, Any]
-        fp,  # type: BytesIO
+        fp,  # type: IO[bytes]
     ):
         # type: (...) -> None
         _dump(data, fp)
