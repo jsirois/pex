@@ -189,6 +189,7 @@ def parse_requirement_from_project_name_and_specifier(
     extras=None,  # type: Optional[Iterable[str]]
     specifier=None,  # type: Optional[SpecifierSet]
     marker=None,  # type: Optional[Marker]
+    editable=False,  # type: bool
 ):
     # type: (...) -> Requirement
     requirement_string = "{project_name}{extras}{specifier}".format(
@@ -198,13 +199,14 @@ def parse_requirement_from_project_name_and_specifier(
     )
     if marker:
         requirement_string += ";" + str(marker)
-    return Requirement.parse(requirement_string)
+    return Requirement.parse(requirement_string, editable=editable)
 
 
 def parse_requirement_from_dist(
     dist,  # type: str
     extras=None,  # type: Optional[Iterable[str]]
     marker=None,  # type: Optional[Marker]
+    editable=False,  # type: bool
 ):
     # type: (...) -> Requirement
     project_name_and_version = dist_metadata.project_name_and_version(dist)
@@ -221,6 +223,7 @@ def parse_requirement_from_dist(
         extras=extras,
         specifier=project_name_and_specifier.specifier,
         marker=marker,
+        editable=editable,
     )
 
 
@@ -236,7 +239,7 @@ class LocalProjectRequirement(_ParsedRequirement):
     def as_requirement(self, dist):
         # type: (str) -> Requirement
         """Create a requirement given a distribution that was built from this local project."""
-        return parse_requirement_from_dist(dist, self.extras, self.marker)
+        return parse_requirement_from_dist(dist, self.extras, self.marker, self.editable)
 
 
 if TYPE_CHECKING:
