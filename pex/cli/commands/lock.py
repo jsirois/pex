@@ -1108,27 +1108,9 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         pip_configuration = resolver_options.create_pip_configuration(
             self.options, use_system_time=False
         )
-        target_configuration = target_options.configure(
+        targets = target_options.configure(
             self.options, pip_configuration=pip_configuration
-        )
-        if (
-            self.options.format is ExportFormat.PEP_751
-            and lock_file.style is LockStyle.UNIVERSAL
-            and not target_configuration.platforms
-            and not target_configuration.complete_platforms
-            and not target_configuration.interpreter_configuration.pythons
-        ):
-            if self.options.format is ExportFormat.PEP_751:
-                with self.output(self.options, binary=True) as toml_output:
-                    toml.dump(pep_751.convert(lock_file), toml_output)
-            return Ok()
-        elif self.options.format is ExportFormat.PEP_751:
-            raise NotImplementedError(
-                "Can only export to PEP-751 pylock.toml format for universal locks."
-            )
-
-        targets = target_configuration.resolve_targets()
-
+        ).resolve_targets()
         target = targets.require_unique_target(
             purpose="exporting a lock in the {format!r} format".format(format=self.options.format)
         )
@@ -1179,9 +1161,24 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     requires_python = lock_file.requires_python[0]
                 target_systems = lock_file.target_systems
 
+            root_requirements = tuple(lock_file.requirements)
+            if subset_result.requirements:
+                reqs = []
+                for parsed_requirement in subset_result.requirements:
+                    if isinstance(parsed_requirement, LocalProjectRequirement):
+                        reqs.append(
+                            lock_file.local_project_requirement_mapping[
+                                os.path.abspath(parsed_requirement.path)
+                            ]
+                        )
+                    else:
+                        reqs.append(parsed_requirement.requirement)
+                root_requirements = tuple(reqs)
+
             with self.output(self.options, binary=True) as toml_output:
                 toml.dump(
                     pep_751.convert(
+                        root_requirements=root_requirements,
                         locked_resolve=resolved.source,
                         subset=resolved.downloadable_artifacts,
                         requires_python=requires_python,

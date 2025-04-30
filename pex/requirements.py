@@ -149,7 +149,6 @@ class PyPIRequirement(_ParsedRequirement):
     """A requirement realized through a package index or find links repository."""
 
     requirement = attr.ib()  # type: Requirement
-    editable = attr.ib(default=False)  # type: bool
 
 
 @attr.s(frozen=True)
@@ -158,7 +157,6 @@ class URLRequirement(_ParsedRequirement):
 
     url = attr.ib()  # type: Text
     requirement = attr.ib()  # type: Requirement
-    editable = attr.ib(default=False)  # type: bool
 
 
 class VCS(Enum["VCS.Value"]):
@@ -181,7 +179,6 @@ class VCSRequirement(_ParsedRequirement):
     vcs = attr.ib()  # type: VCS.Value
     url = attr.ib()  # type: Text
     requirement = attr.ib()  # type: Requirement
-    editable = attr.ib(default=False)  # type: bool
 
 
 def parse_requirement_from_project_name_and_specifier(
@@ -521,16 +518,16 @@ def _parse_requirement_line(
         # There may be whitespace separated markers; so we strip the trailing whitespace
         # used to support those.
         url = parsed_url._replace(params="", fragment="").geturl().rstrip()
-        requirement = parse_requirement_from_project_name_and_specifier(
-            project_name,
-            extras=extras,
-            specifier=specifier,
-            marker=marker,
-        )
         if isinstance(parsed_scheme, VCSScheme):
             url = urlparse.urlparse(url)._replace(scheme=parsed_scheme.scheme).geturl()
-            return VCSRequirement(line, parsed_scheme.vcs, url, requirement, editable=editable)
-        return URLRequirement(line, url, requirement, editable=editable)
+            requirement = parse_requirement_from_project_name_and_specifier(
+                project_name,
+                extras=extras,
+                specifier=specifier,
+                marker=marker,
+            )
+            return VCSRequirement(line, parsed_scheme.vcs, url, requirement)
+        return URLRequirement(line, url, Requirement.parse(line.processed_text))
 
     # Handle local archives and project directories via path or file URL (Pip proprietary).
     local_requirement = parsed_url._replace(scheme="").geturl()
@@ -559,7 +556,7 @@ def _parse_requirement_line(
             requirement = parse_requirement_from_dist(
                 archive_or_project_path, extras=extras, marker=marker
             )
-            return URLRequirement(line, archive_or_project_path, requirement, editable=editable)
+            return URLRequirement(line, archive_or_project_path, requirement)
         except dist_metadata.UnrecognizedDistributionFormat:
             # This is not a recognized local archive distribution. Fall through and try parsing as a
             # PEP-440 requirement.
@@ -571,7 +568,7 @@ def _parse_requirement_line(
     # `packaging.requirements.Requirement`) except for the handling of PEP-440 direct url
     # references; which we handled above and won't encounter here.
     try:
-        return PyPIRequirement(line, Requirement.parse(processed_text), editable=editable)
+        return PyPIRequirement(line, Requirement.parse(processed_text))
     except RequirementParseError as e:
         raise ParseError(
             line, "Problem parsing {!r} as a requirement: {}".format(processed_text, e)

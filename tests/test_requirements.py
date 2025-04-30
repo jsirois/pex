@@ -136,7 +136,6 @@ def req(
     extras=None,  # type: Optional[Iterable[str]]
     specifier=None,  # type: Optional[str]
     marker=None,  # type: Optional[str]
-    editable=False,  # type: bool
 ):
     # type: (...) -> PyPIRequirement
     return PyPIRequirement(
@@ -144,7 +143,6 @@ def req(
         requirement=parse_requirement_from_project_name_and_specifier(
             project_name, extras=extras, specifier=specifier, marker=marker
         ),
-        editable=editable,
     )
 
 
@@ -154,7 +152,6 @@ def url_req(
     extras=None,  # type: Optional[Iterable[str]]
     specifier=None,  # type: Optional[str]
     marker=None,  # type: Optional[str]
-    editable=False,  # type: bool
 ):
     # type: (...) -> URLRequirement
     return URLRequirement(
@@ -163,7 +160,6 @@ def url_req(
         requirement=parse_requirement_from_project_name_and_specifier(
             project_name, extras=extras, specifier=specifier, marker=marker
         ),
-        editable=editable,
     )
 
 
@@ -174,7 +170,6 @@ def vcs_req(
     extras=None,  # type: Optional[Iterable[str]]
     specifier=None,  # type: Optional[str]
     marker=None,  # type: Optional[str]
-    editable=False,  # type: bool
 ):
     # type: (...) -> VCSRequirement
     return VCSRequirement(
@@ -184,7 +179,6 @@ def vcs_req(
         requirement=parse_requirement_from_project_name_and_specifier(
             project_name, extras=extras, specifier=specifier, marker=marker
         ),
-        editable=editable,
     )
 
 
