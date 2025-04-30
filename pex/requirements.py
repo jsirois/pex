@@ -187,6 +187,7 @@ def parse_requirement_from_project_name_and_specifier(
     specifier=None,  # type: Optional[SpecifierSet]
     marker=None,  # type: Optional[Marker]
     editable=False,  # type: bool
+    url=None,  # type: Optional[Text]
 ):
     # type: (...) -> Requirement
     requirement_string = "{project_name}{extras}{specifier}".format(
@@ -196,7 +197,7 @@ def parse_requirement_from_project_name_and_specifier(
     )
     if marker:
         requirement_string += ";" + str(marker)
-    return Requirement.parse(requirement_string, editable=editable)
+    return attr.evolve(Requirement.parse(requirement_string, editable=editable), url=url)
 
 
 def parse_requirement_from_dist(
@@ -518,16 +519,17 @@ def _parse_requirement_line(
         # There may be whitespace separated markers; so we strip the trailing whitespace
         # used to support those.
         url = parsed_url._replace(params="", fragment="").geturl().rstrip()
+        requirement = parse_requirement_from_project_name_and_specifier(
+            project_name,
+            extras=extras,
+            specifier=specifier,
+            marker=marker,
+            url=url,
+        )
         if isinstance(parsed_scheme, VCSScheme):
             url = urlparse.urlparse(url)._replace(scheme=parsed_scheme.scheme).geturl()
-            requirement = parse_requirement_from_project_name_and_specifier(
-                project_name,
-                extras=extras,
-                specifier=specifier,
-                marker=marker,
-            )
             return VCSRequirement(line, parsed_scheme.vcs, url, requirement)
-        return URLRequirement(line, url, Requirement.parse(line.processed_text))
+        return URLRequirement(line, url, requirement)
 
     # Handle local archives and project directories via path or file URL (Pip proprietary).
     local_requirement = parsed_url._replace(scheme="").geturl()
