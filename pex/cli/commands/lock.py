@@ -1180,7 +1180,11 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
                     pep_751.convert(
                         root_requirements=root_requirements,
                         locked_resolve=resolved.source,
-                        subset=resolved.downloadable_artifacts,
+                        subset=(
+                            resolved.downloadable_artifacts
+                            if requirement_configuration.has_requirements
+                            else ()
+                        ),
                         requires_python=requires_python,
                         target_systems=target_systems,
                     ),

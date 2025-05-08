@@ -4,7 +4,6 @@
 from __future__ import absolute_import, print_function
 
 from collections import OrderedDict, defaultdict
-from typing import Iterator, Mapping, Tuple
 
 from pex.dist_metadata import Requirement
 from pex.exceptions import production_assert
@@ -26,7 +25,18 @@ from pex.third_party.packaging.markers import Marker
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import Any, DefaultDict, Dict, Iterable, List, Optional, Union
+    from typing import (
+        Any,
+        DefaultDict,
+        Dict,
+        Iterable,
+        Iterator,
+        List,
+        Mapping,
+        Optional,
+        Tuple,
+        Union,
+    )
 
 
 def _to_environment(system):
@@ -185,6 +195,9 @@ def convert(
         if subset and not artifact_subset:
             continue
 
+        # TODO: XXX: Use OrderedDicts throughout to ensure toml emit stability.
+        # TODO: XXX: Investigate output across 2.7 -> 3.14 (toml, tomli-w, tomllib) and use or else
+        #            invent output template system :/.
         package = {
             "name": str(locked_requirement.pin.project_name),
             "version": str(locked_requirement.pin.version),
