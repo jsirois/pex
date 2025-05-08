@@ -4,21 +4,25 @@
 from __future__ import absolute_import, print_function
 
 from collections import OrderedDict, defaultdict
+from typing import Iterator, Mapping, Tuple
 
 from pex.dist_metadata import Requirement
 from pex.exceptions import production_assert
+from pex.orderedset import OrderedSet
 from pex.pep_503 import ProjectName
 from pex.requirements import URLRequirement, parse_requirement_string
 from pex.resolve.locked_resolve import (
     DownloadableArtifact,
     FileArtifact,
     LocalProjectArtifact,
+    LockedRequirement,
     LockedResolve,
     TargetSystem,
     VCSArtifact,
 )
 from pex.resolve.lockfile.requires_dist import remove_unused_requires_dist
 from pex.resolve.resolved_requirement import Pin
+from pex.third_party.packaging.markers import Marker
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,6 +46,103 @@ _LOCK_BOILERPLATE = OrderedDict(
         ("created-by", "Pex"),
     )
 )  # type: OrderedDict[str, Any]
+
+
+def calculate_marker(
+    project_name,  # type: ProjectName
+    dependants_by_project_name,  # type: Mapping[ProjectName, OrderedSet[Tuple[LockedRequirement, Optional[Marker]]]]
+):
+    # type: (...) -> Optional[Marker]
+
+    dependants = dependants_by_project_name.get(project_name)
+    if not dependants:
+        return None
+
+    or_markers = []  # type: List[Marker]
+    for dependant, marker in dependants:
+        and_markers = [marker] if marker else []  # type: List[Marker]
+        guard_marker = calculate_marker(dependant.pin.project_name, dependants_by_project_name)
+        if guard_marker:
+            and_markers.append(guard_marker)
+
+        if not and_markers:
+            # This indicates a dependency path that is not conditioned by any markers; i.e.:
+            # `project_name` is always required by this dependency path; trumping all others.
+            return None
+
+        if len(and_markers) == 1:
+            or_markers.append(and_markers[0])
+        else:
+            or_markers.append(
+                Marker("({anded})".format(anded=") and (".join(map(str, and_markers))))
+            )
+
+    if not or_markers:
+        # No dependency path was conditioned by any marker at all; so `project_name` is always
+        # strongly reachable.
+        return None
+
+    if len(or_markers) == 1:
+        return or_markers[0]
+
+    return Marker("({ored})".format(ored=") or (".join(map(str, or_markers))))
+
+
+def process_marker_list(marker_list):
+    # type: (List[Any]) -> List[Any]
+
+    reduced_markers = []  # type: List[Any]
+
+    for expression in marker_list:
+        if isinstance(expression, list):
+            reduced = process_marker_list(expression)
+            if reduced:
+                reduced_markers.append(reduced)
+        elif isinstance(expression, tuple):
+            lhs, op, rhs = expression
+            if lhs.value == "extra" or rhs.value == "extra":
+                continue
+            reduced_markers.append(expression)
+        else:
+            assert expression in ("and", "or")
+            if reduced_markers:
+                # A conjunction is only needed if there is a LHS and a RHS. We can check the LHS
+                # now.
+                reduced_markers.append(expression)
+
+    # And we can now make sure conjunctions have a RHS.
+    if reduced_markers and reduced_markers[-1] in ("and", "or"):
+        reduced_markers.pop()
+
+    return reduced_markers
+
+
+def elide_extras(marker):
+    # type: (Marker) -> Optional[Marker]
+
+    markers = process_marker_list(marker._markers)
+    if not markers:
+        return None
+
+    marker._markers = markers
+    return marker
+
+
+def calculate_markers(locked_requirements):
+    # type: (Iterable[LockedRequirement]) -> Iterator[Tuple[LockedRequirement, Optional[Marker]]]
+
+    dependants_by_project_name = defaultdict(
+        OrderedSet
+    )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[LockedRequirement, Optional[Marker]]]]
+    for locked_requirement in locked_requirements:
+        for dist in locked_requirement.requires_dists:
+            marker = elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
+            dependants_by_project_name[dist.project_name].add((locked_requirement, marker))
+
+    for locked_requirement in locked_requirements:
+        yield locked_requirement, calculate_marker(
+            locked_requirement.pin.project_name, dependants_by_project_name
+        )
 
 
 def convert(
@@ -78,7 +179,7 @@ def convert(
         if req.url and isinstance(parse_requirement_string(str(req)), URLRequirement)
     }  # type: Dict[ProjectName, Requirement]
 
-    packages = []  # type: List[Dict[str, Any]]
+    packages = OrderedDict()  # type: OrderedDict[LockedRequirement, Dict[str, Any]]
     for locked_requirement in locked_resolve.locked_requirements:
         artifact_subset = artifact_subset_by_pin[locked_requirement.pin]
         if subset and not artifact_subset:
@@ -88,7 +189,6 @@ def convert(
             "name": str(locked_requirement.pin.project_name),
             "version": str(locked_requirement.pin.version),
         }  # type: Dict[str, Any]
-        # TODO: XXX: Handle marker synthesizing.
 
         if locked_requirement.requires_python:
             package["requires-python"] = str(locked_requirement.requires_python)
@@ -174,7 +274,11 @@ def convert(
             if wheels:
                 package["wheels"] = wheels
 
-        packages.append(package)
+        packages[locked_requirement] = package
 
-    pylock["packages"] = packages
+    for locked_requirement, marker in calculate_markers(packages):
+        if marker:
+            packages[locked_requirement]["marker"] = str(marker)
+
+    pylock["packages"] = list(packages.values())
     return pylock
