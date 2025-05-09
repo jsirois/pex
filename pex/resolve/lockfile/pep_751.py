@@ -60,7 +60,7 @@ _LOCK_BOILERPLATE = OrderedDict(
 
 def calculate_marker(
     project_name,  # type: ProjectName
-    dependants_by_project_name,  # type: Mapping[ProjectName, OrderedSet[Tuple[LockedRequirement, Optional[Marker]]]]
+    dependants_by_project_name,  # type: Mapping[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
 ):
     # type: (...) -> Optional[Marker]
 
@@ -69,9 +69,9 @@ def calculate_marker(
         return None
 
     or_markers = []  # type: List[Marker]
-    for dependant, marker in dependants:
+    for dependant_project_name, marker in dependants:
         and_markers = [marker] if marker else []  # type: List[Marker]
-        guard_marker = calculate_marker(dependant.pin.project_name, dependants_by_project_name)
+        guard_marker = calculate_marker(dependant_project_name, dependants_by_project_name)
         if guard_marker:
             and_markers.append(guard_marker)
 
@@ -143,11 +143,13 @@ def calculate_markers(locked_requirements):
 
     dependants_by_project_name = defaultdict(
         OrderedSet
-    )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[LockedRequirement, Optional[Marker]]]]
+    )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
     for locked_requirement in locked_requirements:
         for dist in locked_requirement.requires_dists:
             marker = elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
-            dependants_by_project_name[dist.project_name].add((locked_requirement, marker))
+            dependants_by_project_name[dist.project_name].add(
+                (locked_requirement.pin.project_name, marker)
+            )
 
     for locked_requirement in locked_requirements:
         yield locked_requirement, calculate_marker(
