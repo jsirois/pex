@@ -92,6 +92,8 @@ def calculate_marker(
         # strongly reachable.
         return None
 
+    # TODO: XXX: Perform logic reduction - nice to have.
+
     if len(or_markers) == 1:
         return or_markers[0]
 
