@@ -58,7 +58,7 @@ _LOCK_BOILERPLATE = OrderedDict(
 )  # type: OrderedDict[str, Any]
 
 
-def calculate_marker(
+def _calculate_marker(
     project_name,  # type: ProjectName
     dependants_by_project_name,  # type: Mapping[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
 ):
@@ -68,12 +68,18 @@ def calculate_marker(
     if not dependants:
         return None
 
-    or_markers = []  # type: List[Marker]
+    # We make a very basic effort at de-duplication by storing markers as strings in (ordered) sets.
+    # TODO: Perform post-processing on the calculated Marker that does proper logic reduction; e.g:
+    #  python_version >= '3.9' and python_version == '3.11.*' -> python_version == '3.11.*'
+
+    or_markers = OrderedSet()  # type: OrderedSet[str]
     for dependant_project_name, marker in dependants:
-        and_markers = [marker] if marker else []  # type: List[Marker]
-        guard_marker = calculate_marker(dependant_project_name, dependants_by_project_name)
+        and_markers = OrderedSet()  # type: OrderedSet[str]
+        if marker:
+            and_markers.add(str(marker))
+        guard_marker = _calculate_marker(dependant_project_name, dependants_by_project_name)
         if guard_marker:
-            and_markers.append(guard_marker)
+            and_markers.add(str(guard_marker))
 
         if not and_markers:
             # This indicates a dependency path that is not conditioned by any markers; i.e.:
@@ -81,33 +87,32 @@ def calculate_marker(
             return None
 
         if len(and_markers) == 1:
-            or_markers.append(and_markers[0])
+            or_markers.add(and_markers.pop())
         else:
-            or_markers.append(
-                Marker("({anded})".format(anded=") and (".join(map(str, and_markers))))
-            )
+            or_markers.add("({anded})".format(anded=") and (".join(and_markers)))
 
     if not or_markers:
         # No dependency path was conditioned by any marker at all; so `project_name` is always
         # strongly reachable.
         return None
 
-    # TODO: XXX: Perform logic reduction - nice to have.
-
     if len(or_markers) == 1:
-        return or_markers[0]
+        return Marker(or_markers.pop())
 
-    return Marker("({ored})".format(ored=") or (".join(map(str, or_markers))))
+    return Marker("({ored})".format(ored=") or (".join(or_markers)))
 
 
-def process_marker_list(marker_list):
+_MARKER_CONJUNCTIONS = ("and", "or")
+
+
+def _process_marker_list(marker_list):
     # type: (List[Any]) -> List[Any]
 
     reduced_markers = []  # type: List[Any]
 
     for expression in marker_list:
         if isinstance(expression, list):
-            reduced = process_marker_list(expression)
+            reduced = _process_marker_list(expression)
             if reduced:
                 reduced_markers.append(reduced)
         elif isinstance(expression, tuple):
@@ -116,23 +121,28 @@ def process_marker_list(marker_list):
                 continue
             reduced_markers.append(expression)
         else:
-            assert expression in ("and", "or")
+            assert expression in _MARKER_CONJUNCTIONS
             if reduced_markers:
                 # A conjunction is only needed if there is a LHS and a RHS. We can check the LHS
                 # now.
                 reduced_markers.append(expression)
 
     # And we can now make sure conjunctions have a RHS.
-    if reduced_markers and reduced_markers[-1] in ("and", "or"):
+    if reduced_markers and reduced_markers[-1] in _MARKER_CONJUNCTIONS:
         reduced_markers.pop()
 
     return reduced_markers
 
 
-def elide_extras(marker):
+def _elide_extras(marker):
     # type: (Marker) -> Optional[Marker]
 
-    markers = process_marker_list(marker._markers)
+    # When a lock is created, its input requirements may include extras and that causes certain
+    # extra requirements to be included in the lock. When converting that lock, the extras have been
+    # sealed in already; so any extra markers should be ignored; so we elide them from all marker
+    # expressions.
+
+    markers = _process_marker_list(marker._markers)
     if not markers:
         return None
 
@@ -140,7 +150,7 @@ def elide_extras(marker):
     return marker
 
 
-def calculate_markers(locked_requirements):
+def _calculate_markers(locked_requirements):
     # type: (Iterable[LockedRequirement]) -> Iterator[Tuple[LockedRequirement, Optional[Marker]]]
 
     dependants_by_project_name = defaultdict(
@@ -148,13 +158,13 @@ def calculate_markers(locked_requirements):
     )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
     for locked_requirement in locked_requirements:
         for dist in locked_requirement.requires_dists:
-            marker = elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
+            marker = _elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
             dependants_by_project_name[dist.project_name].add(
                 (locked_requirement.pin.project_name, marker)
             )
 
     for locked_requirement in locked_requirements:
-        yield locked_requirement, calculate_marker(
+        yield locked_requirement, _calculate_marker(
             locked_requirement.pin.project_name, dependants_by_project_name
         )
 
@@ -199,21 +209,22 @@ def convert(
         if subset and not artifact_subset:
             continue
 
-        # TODO: XXX: Use OrderedDicts throughout to ensure toml emit stability.
         # TODO: XXX: Investigate output across 2.7 -> 3.14 (toml, tomli-w, tomllib) and use or else
         #            invent output template system :/.
-        package = {
-            "name": str(locked_requirement.pin.project_name),
-            "version": str(locked_requirement.pin.version),
-        }  # type: Dict[str, Any]
+        package = OrderedDict(
+            (
+                ("name", str(locked_requirement.pin.project_name)),
+                ("version", str(locked_requirement.pin.version)),
+            )
+        )  # type: OrderedDict[str, Any]
 
         if locked_requirement.requires_python:
             package["requires-python"] = str(locked_requirement.requires_python)
 
         if locked_requirement.requires_dists:
-            dependencies = []  # type: List[Dict[str, Any]]
+            dependencies = []  # type: List[OrderedDict[str, Any]]
             for dep in locked_requirement.requires_dists:
-                dependencies.append({"name": str(dep.project_name)})
+                dependencies.append(OrderedDict([("name", str(dep.project_name))]))
             package["dependencies"] = dependencies
 
         artifacts = artifact_subset or list(locked_requirement.iter_artifacts())
@@ -229,19 +240,31 @@ def convert(
                 ),
             )
             artifact = artifacts[0]
-            package["archive"] = {
-                "url": artifact.url.download_url,
-                "hashes": {artifact.fingerprint.algorithm: artifact.fingerprint.hash},
-            }
+            package["archive"] = OrderedDict(
+                (
+                    ("url", artifact.url.download_url),
+                    (
+                        "hashes",
+                        OrderedDict([(artifact.fingerprint.algorithm, artifact.fingerprint.hash)]),
+                    ),
+                )
+            )
         else:
-            wheels = []  # type: List[Dict[str, Any]]
+            wheels = []  # type: List[OrderedDict[str, Any]]
             for artifact in artifacts:
                 if isinstance(artifact, FileArtifact):
-                    file_artifact = {
-                        "name": artifact.filename,
-                        "url": artifact.url.download_url,
-                        "hashes": {artifact.fingerprint.algorithm: artifact.fingerprint.hash},
-                    }
+                    file_artifact = OrderedDict(
+                        (
+                            ("name", artifact.filename),
+                            ("url", artifact.url.download_url),
+                            (
+                                "hashes",
+                                OrderedDict(
+                                    [(artifact.fingerprint.algorithm, artifact.fingerprint.hash)]
+                                ),
+                            ),
+                        )
+                    )
                     if artifact.is_source:
                         package["sdist"] = file_artifact
                     elif artifact.is_wheel:
@@ -268,15 +291,17 @@ def convert(
                             "This most likely means the lock file was created by Pex older than "
                             "2.37.0 or that the lock was created using Python 2.7.\n"
                             "You'll need to re-create the lock with a newer Pex or newer Python or "
-                            "both to be able to export it in PEP-851 format.".format(
+                            "both to be able to export it in PEP-751 format.".format(
                                 url=artifact.url.raw_url
                             )
                         )
-                    vcs_artifact = {
-                        "type": artifact.vcs.value,
-                        "url": artifact.vcs_url,
-                        "commit-id": artifact.commit_id,
-                    }
+                    vcs_artifact = OrderedDict(
+                        (
+                            ("type", artifact.vcs.value),
+                            ("url", artifact.vcs_url),
+                            ("commit-id", artifact.commit_id),
+                        ),
+                    )
                     if artifact.requested_revision:
                         vcs_artifact["requested-revision"] = artifact.requested_revision
                     if artifact.subdirectory:
@@ -284,16 +309,18 @@ def convert(
                     package["vcs"] = vcs_artifact
                 else:
                     production_assert(isinstance(artifact, LocalProjectArtifact))
-                    package["directory"] = {
-                        "path": artifact.directory,
-                        "editable": artifact.editable,
-                    }
+                    package["directory"] = OrderedDict(
+                        (
+                            ("path", artifact.directory),
+                            ("editable", artifact.editable),
+                        )
+                    )
             if wheels:
                 package["wheels"] = wheels
 
         packages[locked_requirement] = package
 
-    for locked_requirement, marker in calculate_markers(packages):
+    for locked_requirement, marker in _calculate_markers(packages):
         if marker:
             packages[locked_requirement]["marker"] = str(marker)
 

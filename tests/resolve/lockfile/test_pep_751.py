@@ -7,7 +7,7 @@ from collections import defaultdict
 
 from pex.orderedset import OrderedSet
 from pex.pep_503 import ProjectName
-from pex.resolve.lockfile.pep_751 import calculate_marker, elide_extras
+from pex.resolve.lockfile.pep_751 import _calculate_marker, _elide_extras
 from pex.third_party.packaging.markers import Marker
 from pex.typing import TYPE_CHECKING
 
@@ -34,8 +34,8 @@ def assert_markers_equal(
 
 
 def test_elide_extras():
-    assert elide_extras(Marker("extra == 'bob'")) is None
-    assert elide_extras(Marker("extra == 'bob' or extra == 'bill'")) is None
+    assert _elide_extras(Marker("extra == 'bob'")) is None
+    assert _elide_extras(Marker("extra == 'bob' or extra == 'bill'")) is None
 
     def assert_elide_extras(
         expected,  # type: str
@@ -43,7 +43,7 @@ def test_elide_extras():
     ):
         # type: (...) -> None
 
-        assert_markers_equal(Marker(expected), elide_extras(Marker(original)))
+        assert_markers_equal(Marker(expected), _elide_extras(Marker(original)))
 
     assert_elide_extras(
         "python_version == '3.14.*'",
@@ -125,9 +125,9 @@ def test_calculate_marker_none():
         project("C").depends_on("B"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
-    assert calculate_marker(ProjectName("B"), dependants_mapping) is None
-    assert calculate_marker(ProjectName("C"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("B"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("C"), dependants_mapping) is None
 
 
 def test_calculate_marker_multipath_none():
@@ -145,9 +145,9 @@ def test_calculate_marker_multipath_none():
         project("C").depends_on("B"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
-    assert calculate_marker(ProjectName("B"), dependants_mapping) is None
-    assert calculate_marker(ProjectName("C"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("B"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("C"), dependants_mapping) is None
 
 
 def test_calculate_marker_multipath_or():
@@ -159,12 +159,12 @@ def test_calculate_marker_multipath_or():
         project("C").depends_on("B", marker="sys_platform == 'win32'"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
     assert_markers_equal(
         Marker("python_version == '3.9.*' or sys_platform == 'win32'"),
-        calculate_marker(ProjectName("B"), dependants_mapping),
+        _calculate_marker(ProjectName("B"), dependants_mapping),
     )
-    assert calculate_marker(ProjectName("C"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("C"), dependants_mapping) is None
 
 
 def test_calculate_marker_multipath_indirect_or():
@@ -176,13 +176,13 @@ def test_calculate_marker_multipath_indirect_or():
         project("C").depends_on("B"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
     assert_markers_equal(
         Marker("python_version == '3.9.*' or sys_platform == 'win32'"),
-        calculate_marker(ProjectName("B"), dependants_mapping),
+        _calculate_marker(ProjectName("B"), dependants_mapping),
     )
     assert_markers_equal(
-        Marker("sys_platform == 'win32'"), calculate_marker(ProjectName("C"), dependants_mapping)
+        Marker("sys_platform == 'win32'"), _calculate_marker(ProjectName("C"), dependants_mapping)
     )
 
 
@@ -195,15 +195,15 @@ def test_calculate_marker_multipath_and_or():
         project("C").depends_on("B", marker="python_version >= '3.9'"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
     assert_markers_equal(
         Marker(
             "python_version == '3.9.*' or (python_version >= '3.9' and sys_platform == 'win32')"
         ),
-        calculate_marker(ProjectName("B"), dependants_mapping),
+        _calculate_marker(ProjectName("B"), dependants_mapping),
     )
     assert_markers_equal(
-        Marker("sys_platform == 'win32'"), calculate_marker(ProjectName("C"), dependants_mapping)
+        Marker("sys_platform == 'win32'"), _calculate_marker(ProjectName("C"), dependants_mapping)
     )
 
 
@@ -216,16 +216,16 @@ def test_calculate_marker_indirect_and():
         project("C").depends_on("D", marker="sys_platform == 'win32'"),
     )
 
-    assert calculate_marker(ProjectName("A"), dependants_mapping) is None
+    assert _calculate_marker(ProjectName("A"), dependants_mapping) is None
     assert_markers_equal(
         Marker("python_version == '3.9.*'"),
-        calculate_marker(ProjectName("B"), dependants_mapping),
+        _calculate_marker(ProjectName("B"), dependants_mapping),
     )
     assert_markers_equal(
         Marker("python_version == '3.9.*'"),
-        calculate_marker(ProjectName("C"), dependants_mapping),
+        _calculate_marker(ProjectName("C"), dependants_mapping),
     )
     assert_markers_equal(
         Marker("sys_platform == 'win32' and python_version == '3.9.*'"),
-        calculate_marker(ProjectName("D"), dependants_mapping),
+        _calculate_marker(ProjectName("D"), dependants_mapping),
     )
