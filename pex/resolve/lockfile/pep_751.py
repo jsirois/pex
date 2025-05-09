@@ -25,18 +25,7 @@ from pex.third_party.packaging.markers import Marker
 from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from typing import (
-        Any,
-        DefaultDict,
-        Dict,
-        Iterable,
-        Iterator,
-        List,
-        Mapping,
-        Optional,
-        Tuple,
-        Union,
-    )
+    from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 
 def _calculate_marker(
@@ -131,25 +120,6 @@ def _elide_extras(marker):
     return marker
 
 
-def _calculate_markers(locked_requirements):
-    # type: (Iterable[LockedRequirement]) -> Iterator[Tuple[LockedRequirement, Optional[Marker]]]
-
-    dependants_by_project_name = defaultdict(
-        OrderedSet
-    )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
-    for locked_requirement in locked_requirements:
-        for dist in locked_requirement.requires_dists:
-            marker = _elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
-            dependants_by_project_name[dist.project_name].add(
-                (locked_requirement.pin.project_name, marker)
-            )
-
-    for locked_requirement in locked_requirements:
-        yield locked_requirement, _calculate_marker(
-            locked_requirement.pin.project_name, dependants_by_project_name
-        )
-
-
 def _to_environment(system):
     # type: (TargetSystem.Value) -> str
     if system is TargetSystem.LINUX:
@@ -159,14 +129,6 @@ def _to_environment(system):
     else:
         production_assert(system is TargetSystem.WINDOWS)
         return "platform_system = 'Windows'"
-
-
-_LOCK_BOILERPLATE = OrderedDict(
-    (
-        ("lock-version", "1.0"),  # https://peps.python.org/pep-0751/#lock-version
-        ("created-by", "pex"),  # https://peps.python.org/pep-0751/#created-by
-    )
-)  # type: OrderedDict[str, Any]
 
 
 def convert(
@@ -185,7 +147,9 @@ def convert(
         target_systems=target_systems,
     )
 
-    pylock = _LOCK_BOILERPLATE.copy()
+    pylock = OrderedDict()  # type: OrderedDict[str, Any]
+    pylock["lock-version"] = "1.0"  # https://peps.python.org/pep-0751/#lock-version
+
     if target_systems:
         # https://peps.python.org/pep-0751/#environments
         #
@@ -202,6 +166,14 @@ def convert(
         #  only wheel artifacts by the wheel tags.
         pylock["requires-python"] = requires_python
 
+    # TODO: These 3 assume a `pyproject.toml` is the input source for the lock. It almost never is
+    #  for current Pex lock use cases. Figure out if there is anything better that can be done.
+    pylock["extras"] = []  # https://peps.python.org/pep-0751/#extras
+    pylock["dependency-groups"] = []  # https://peps.python.org/pep-0751/#dependency-groups
+    pylock["default-groups"] = []  # https://peps.python.org/pep-0751/#default-groups
+
+    pylock["created-by"] = "pex"  # https://peps.python.org/pep-0751/#created-by
+
     artifact_subset_by_pin = defaultdict(
         list
     )  # type: DefaultDict[Pin, List[Union[FileArtifact, LocalProjectArtifact, VCSArtifact]]]
@@ -213,6 +185,16 @@ def convert(
         for req in root_requirements
         if req.url and isinstance(parse_requirement_string(str(req)), URLRequirement)
     }  # type: Dict[ProjectName, Requirement]
+
+    dependants_by_project_name = defaultdict(
+        OrderedSet
+    )  # type: DefaultDict[ProjectName, OrderedSet[Tuple[ProjectName, Optional[Marker]]]]
+    for locked_requirement in locked_resolve.locked_requirements:
+        for dist in locked_requirement.requires_dists:
+            marker = _elide_extras(dist.marker) if dist.marker else None  # type: Optional[Marker]
+            dependants_by_project_name[dist.project_name].add(
+                (locked_requirement.pin.project_name, marker)
+            )
 
     packages = OrderedDict()  # type: OrderedDict[LockedRequirement, Dict[str, Any]]
     for locked_requirement in locked_resolve.locked_requirements:
@@ -242,6 +224,11 @@ def convert(
             # + https://peps.python.org/pep-0751/#packages-vcs-commit-id
             package["version"] = locked_requirement.pin.version.normalized
 
+        # https://peps.python.org/pep-0751/#packages-marker
+        marker = _calculate_marker(locked_requirement.pin.project_name, dependants_by_project_name)
+        if marker:
+            package["marker"] = str(marker)
+
         if locked_requirement.requires_python:
             # https://peps.python.org/pep-0751/#packages-requires-python
             package["requires-python"] = str(locked_requirement.requires_python)
@@ -268,16 +255,30 @@ def convert(
             )
             artifact = artifacts[0]
             archive = OrderedDict()  # type: OrderedDict[str, Any]
+
+            # https://peps.python.org/pep-0751/#packages-archive-url
             archive["url"] = artifact.url.download_url
+
+            # https://peps.python.org/pep-0751/#packages-archive-hashes
             archive["hashes"] = {artifact.fingerprint.algorithm: artifact.fingerprint.hash}
+
             package["archive"] = archive
         else:
             wheels = []  # type: List[OrderedDict[str, Any]]
             for artifact in artifacts:
                 if isinstance(artifact, FileArtifact):
                     file_artifact = OrderedDict()  # type: OrderedDict[str, Any]
+
+                    # https://peps.python.org/pep-0751/#packages-sdist-name
+                    # https://peps.python.org/pep-0751/#packages-wheels-name
                     file_artifact["name"] = artifact.filename
+
+                    # https://peps.python.org/pep-0751/#packages-sdist-url
+                    # https://peps.python.org/pep-0751/#packages-wheels-url
                     file_artifact["url"] = artifact.url.download_url
+
+                    # https://peps.python.org/pep-0751/#packages-sdist-hashes
+                    # https://peps.python.org/pep-0751/#packages-wheels-hashes
                     file_artifact["hashes"] = {
                         artifact.fingerprint.algorithm: artifact.fingerprint.hash
                     }
@@ -312,28 +313,41 @@ def convert(
                             )
                         )
                     vcs_artifact = OrderedDict()  # type: OrderedDict[str, Any]
+
+                    # https://peps.python.org/pep-0751/#packages-vcs-type
                     vcs_artifact["type"] = artifact.vcs.value
+
+                    # https://peps.python.org/pep-0751/#packages-vcs-url
                     vcs_artifact["url"] = artifact.vcs_url
-                    vcs_artifact["commit-id"] = artifact.commit_id
+
+                    # https://peps.python.org/pep-0751/#packages-vcs-requested-revision
                     if artifact.requested_revision:
                         vcs_artifact["requested-revision"] = artifact.requested_revision
+
+                    # https://peps.python.org/pep-0751/#packages-vcs-commit-id
+                    vcs_artifact["commit-id"] = artifact.commit_id
+
+                    # https://peps.python.org/pep-0751/#packages-vcs-subdirectory
                     if artifact.subdirectory:
                         vcs_artifact["subdirectory"] = artifact.subdirectory
+
                     package["vcs"] = vcs_artifact
                 else:
                     production_assert(isinstance(artifact, LocalProjectArtifact))
                     directory = OrderedDict()  # type: OrderedDict[str, Any]
+
+                    # https://peps.python.org/pep-0751/#packages-directory-path
                     directory["path"] = artifact.directory
+
+                    # https://peps.python.org/pep-0751/#packages-directory-editable
                     directory["editable"] = artifact.editable
+
                     package["directory"] = directory
+
             if wheels:
                 package["wheels"] = wheels
 
         packages[locked_requirement] = package
-
-    for locked_requirement, marker in _calculate_markers(packages):
-        if marker:
-            packages[locked_requirement]["marker"] = str(marker)
 
     pylock["packages"] = list(packages.values())
     return pylock
