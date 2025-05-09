@@ -1,7 +1,7 @@
 # Copyright 2025 Pex project contributors.
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import
 
 from collections import OrderedDict, defaultdict
 
@@ -37,25 +37,6 @@ if TYPE_CHECKING:
         Tuple,
         Union,
     )
-
-
-def _to_environment(system):
-    # type: (TargetSystem.Value) -> str
-    if system is TargetSystem.LINUX:
-        return "platform_system = 'Linux'"
-    elif system is TargetSystem.MAC:
-        return "platform_system = 'Darwin'"
-    else:
-        production_assert(system is TargetSystem.WINDOWS)
-        return "platform_system = 'Windows'"
-
-
-_LOCK_BOILERPLATE = OrderedDict(
-    (
-        ("lock-version", "1.0"),
-        ("created-by", "Pex"),
-    )
-)  # type: OrderedDict[str, Any]
 
 
 def _calculate_marker(
@@ -169,6 +150,25 @@ def _calculate_markers(locked_requirements):
         )
 
 
+def _to_environment(system):
+    # type: (TargetSystem.Value) -> str
+    if system is TargetSystem.LINUX:
+        return "platform_system = 'Linux'"
+    elif system is TargetSystem.MAC:
+        return "platform_system = 'Darwin'"
+    else:
+        production_assert(system is TargetSystem.WINDOWS)
+        return "platform_system = 'Windows'"
+
+
+_LOCK_BOILERPLATE = OrderedDict(
+    (
+        ("lock-version", "1.0"),  # https://peps.python.org/pep-0751/#lock-version
+        ("created-by", "pex"),  # https://peps.python.org/pep-0751/#created-by
+    )
+)  # type: OrderedDict[str, Any]
+
+
 def convert(
     root_requirements,  # type: Iterable[Requirement]
     locked_resolve,  # type: LockedResolve
@@ -187,8 +187,19 @@ def convert(
 
     pylock = _LOCK_BOILERPLATE.copy()
     if target_systems:
+        # https://peps.python.org/pep-0751/#environments
+        #
+        # TODO: We just stick to mapping `--target-system` into markers currently but this should
+        #  probably include the full marker needed to rule out invalid installs, like Python 2.7
+        #  attempting to install a lock with only Python 3 wheels.
         pylock["environments"] = [_to_environment(system) for system in target_systems]
     if requires_python:
+        # https://peps.python.org/pep-0751/#requires-python
+        #
+        # TODO: This is currently just the `--interpreter-constraint` for `--style universal` locks
+        #  but it should probably be further refined (or purely calculated for non universal locks)
+        #  from locked project requires-python values and even more narrowly by locked projects with
+        #  only wheel artifacts by the wheel tags.
         pylock["requires-python"] = requires_python
 
     artifact_subset_by_pin = defaultdict(
@@ -211,23 +222,39 @@ def convert(
 
         # TODO: XXX: Investigate output across 2.7 -> 3.14 (toml, tomli-w, tomllib) and use or else
         #            invent output template system :/.
-        package = OrderedDict(
-            (
-                ("name", str(locked_requirement.pin.project_name)),
-                ("version", str(locked_requirement.pin.version)),
-            )
-        )  # type: OrderedDict[str, Any]
+
+        package = OrderedDict()  # type: OrderedDict[str, Any]
+
+        # https://peps.python.org/pep-0751/#packages-name
+        # The name of the package normalized.
+        package["name"] = locked_requirement.pin.project_name.normalized
+
+        artifacts = artifact_subset or list(locked_requirement.iter_artifacts())
+        if len(artifacts) != 1 or not isinstance(artifacts[0], LocalProjectArtifact):
+            # https://peps.python.org/pep-0751/#packages-version
+            # The version MUST NOT be included when it cannot be guaranteed to be consistent with
+            # the code used (i.e. when a source tree is used).
+            #
+            # We do not include locked VCS requirements in the version elision since PEP-751
+            # requires VCS locks have a commit-id and implies it's the commit id that must be used
+            # to check out the project:
+            # + https://peps.python.org/pep-0751/#packages-vcs-requested-revision
+            # + https://peps.python.org/pep-0751/#packages-vcs-commit-id
+            package["version"] = locked_requirement.pin.version.normalized
 
         if locked_requirement.requires_python:
+            # https://peps.python.org/pep-0751/#packages-requires-python
             package["requires-python"] = str(locked_requirement.requires_python)
 
         if locked_requirement.requires_dists:
-            dependencies = []  # type: List[OrderedDict[str, Any]]
+            # https://peps.python.org/pep-0751/#packages-dependencies
+            #
+            # Since Pex only supports locking one version of any given project, the project name
+            # is enough to disambiguate the dependency.
+            dependencies = []  # type: List[Dict[str, Any]]
             for dep in locked_requirement.requires_dists:
-                dependencies.append(OrderedDict([("name", str(dep.project_name))]))
+                dependencies.append({"name": dep.project_name.normalized})
             package["dependencies"] = dependencies
-
-        artifacts = artifact_subset or list(locked_requirement.iter_artifacts())
 
         archive_requirement = archive_requirements.get(locked_requirement.pin.project_name)
         if archive_requirement:
@@ -240,31 +267,20 @@ def convert(
                 ),
             )
             artifact = artifacts[0]
-            package["archive"] = OrderedDict(
-                (
-                    ("url", artifact.url.download_url),
-                    (
-                        "hashes",
-                        OrderedDict([(artifact.fingerprint.algorithm, artifact.fingerprint.hash)]),
-                    ),
-                )
-            )
+            archive = OrderedDict()  # type: OrderedDict[str, Any]
+            archive["url"] = artifact.url.download_url
+            archive["hashes"] = {artifact.fingerprint.algorithm: artifact.fingerprint.hash}
+            package["archive"] = archive
         else:
             wheels = []  # type: List[OrderedDict[str, Any]]
             for artifact in artifacts:
                 if isinstance(artifact, FileArtifact):
-                    file_artifact = OrderedDict(
-                        (
-                            ("name", artifact.filename),
-                            ("url", artifact.url.download_url),
-                            (
-                                "hashes",
-                                OrderedDict(
-                                    [(artifact.fingerprint.algorithm, artifact.fingerprint.hash)]
-                                ),
-                            ),
-                        )
-                    )
+                    file_artifact = OrderedDict()  # type: OrderedDict[str, Any]
+                    file_artifact["name"] = artifact.filename
+                    file_artifact["url"] = artifact.url.download_url
+                    file_artifact["hashes"] = {
+                        artifact.fingerprint.algorithm: artifact.fingerprint.hash
+                    }
                     if artifact.is_source:
                         package["sdist"] = file_artifact
                     elif artifact.is_wheel:
@@ -295,13 +311,10 @@ def convert(
                                 url=artifact.url.raw_url
                             )
                         )
-                    vcs_artifact = OrderedDict(
-                        (
-                            ("type", artifact.vcs.value),
-                            ("url", artifact.vcs_url),
-                            ("commit-id", artifact.commit_id),
-                        ),
-                    )
+                    vcs_artifact = OrderedDict()  # type: OrderedDict[str, Any]
+                    vcs_artifact["type"] = artifact.vcs.value
+                    vcs_artifact["url"] = artifact.vcs_url
+                    vcs_artifact["commit-id"] = artifact.commit_id
                     if artifact.requested_revision:
                         vcs_artifact["requested-revision"] = artifact.requested_revision
                     if artifact.subdirectory:
@@ -309,12 +322,10 @@ def convert(
                     package["vcs"] = vcs_artifact
                 else:
                     production_assert(isinstance(artifact, LocalProjectArtifact))
-                    package["directory"] = OrderedDict(
-                        (
-                            ("path", artifact.directory),
-                            ("editable", artifact.editable),
-                        )
-                    )
+                    directory = OrderedDict()  # type: OrderedDict[str, Any]
+                    directory["path"] = artifact.directory
+                    directory["editable"] = artifact.editable
+                    package["directory"] = directory
             if wheels:
                 package["wheels"] = wheels
 
