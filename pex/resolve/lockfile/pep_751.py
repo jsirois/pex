@@ -3,31 +3,59 @@
 
 from __future__ import absolute_import
 
+import os
 from collections import OrderedDict, defaultdict
 
 from pex import toml
+from pex.common import pluralize
+from pex.dependency_configuration import DependencyConfiguration
 from pex.dist_metadata import Requirement
 from pex.exceptions import production_assert
+from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
+from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
-from pex.requirements import URLRequirement, parse_requirement_string
+from pex.requirements import LocalProjectRequirement, URLRequirement, parse_requirement_string
 from pex.resolve.locked_resolve import (
     DownloadableArtifact,
     FileArtifact,
     LocalProjectArtifact,
     LockedRequirement,
     LockedResolve,
+    Resolved,
     TargetSystem,
     VCSArtifact,
 )
 from pex.resolve.lockfile.requires_dist import remove_unused_requires_dist
+from pex.resolve.lockfile.subset import Subset, SubsetResult
+from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Pin
+from pex.resolve.resolver_configuration import BuildConfiguration
+from pex.result import Error, try_
+from pex.targets import Target, Targets
 from pex.third_party.packaging.markers import Marker
 from pex.toml import InlineTable
+from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from typing import IO, Any, DefaultDict, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+    from typing import (
+        IO,
+        Any,
+        DefaultDict,
+        Dict,
+        Iterable,
+        List,
+        Mapping,
+        Optional,
+        Text,
+        Tuple,
+        Union,
+    )
+
+    import attr  # vendor:skip
+else:
+    from pex.third_party import attr
 
 
 def _calculate_marker(
@@ -368,3 +396,148 @@ def convert(
     pylock["packages"] = list(packages.values())
 
     toml.dump(pylock, output)
+
+
+@attr.s(frozen=True)
+class Pylock(object):
+    @classmethod
+    def parse(cls, pylock_toml_path):
+        # type: (str) -> Union[Pylock, Error]
+        lock_data = toml.load(pylock_toml_path)
+
+        lock_version = lock_data.get("lock-version")
+        if not lock_version:
+            return Error(
+                "The PEP-751 lock at {pylock} has no lock-version. Pex only supports version 1.0 and "
+                "refuses to guess compatibility."
+            )
+        elif lock_version != "1.0":
+            return Error(
+                "The PEP-751 lock at {pylock} has lock-version {version}, but Pex only supports "
+                "version 1.0.".format(pylock=pylock_toml_path, version=lock_version)
+            )
+
+        return Error("TODO: XXX: Not Implemented.")
+
+    lock_version = attr.ib()  # type: Version
+    created_by = attr.ib()  # type: str
+    packages = attr.ib()  # type: Tuple[Union[FileArtifact, VCSArtifact, LocalProjectArtifact], ...]
+    local_project_requirement_mapping = attr.ib()  # type: Mapping[str, Requirement]
+    source = attr.ib()  # type: str
+
+    def resolve(
+        self,
+        _target,  # type: Target
+        _requirements,  # type: Iterable[Requirement]
+        _constraints=(),  # type: Iterable[Requirement]
+        _transitive=True,  # type: bool
+        _build_configuration=BuildConfiguration(),  # type: BuildConfiguration
+        _include_all_matches=False,  # type: bool
+        _dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
+    ):
+        # type: (...) -> Union[Resolved[Pylock], Error]
+        return Error("TODO: XXX: Not Implemented.")
+
+    def render_description(self):
+        # type: () -> str
+        return "{source} created by {created_by}".format(
+            source=self.source, created_by=self.created_by
+        )
+
+
+def subset(
+    targets,  # type: Targets
+    pylock_toml_path,  # type: str
+    requirement_configuration=RequirementConfiguration(),  # type: RequirementConfiguration
+    network_configuration=None,  # type: Optional[NetworkConfiguration]
+    build_configuration=BuildConfiguration(),  # type: BuildConfiguration
+    transitive=True,  # type: bool
+    include_all_matches=False,  # type: bool
+    dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
+):
+    # type: (...) -> Union[SubsetResult[Pylock], Error]
+
+    pylock = try_(Pylock.parse(pylock_toml_path))
+
+    parsed_requirements = tuple(requirement_configuration.parse_requirements(network_configuration))
+    constraints = tuple(
+        parsed_constraint.requirement
+        for parsed_constraint in requirement_configuration.parse_constraints(network_configuration)
+    )
+    missing_local_projects = []  # type: List[Text]
+    requirements_to_resolve = OrderedSet()  # type: OrderedSet[Requirement]
+    for parsed_requirement in parsed_requirements:
+        if isinstance(parsed_requirement, LocalProjectRequirement):
+            local_project_requirement = pylock.local_project_requirement_mapping.get(
+                os.path.abspath(parsed_requirement.path)
+            )
+            if local_project_requirement:
+                requirements_to_resolve.add(
+                    attr.evolve(local_project_requirement, editable=parsed_requirement.editable)
+                )
+            else:
+                missing_local_projects.append(parsed_requirement.line.processed_text)
+        else:
+            requirements_to_resolve.add(parsed_requirement.requirement)
+    if missing_local_projects:
+        return Error(
+            "Found {count} local project {requirements} not present in the lock at {lock}:\n"
+            "{missing}\n"
+            "\n"
+            "Perhaps{for_example} you meant to use `--project {project}`?".format(
+                count=len(missing_local_projects),
+                requirements=pluralize(missing_local_projects, "requirement"),
+                lock=pylock.render_description(),
+                missing="\n".join(
+                    "{index}. {missing}".format(index=index, missing=missing)
+                    for index, missing in enumerate(missing_local_projects, start=1)
+                ),
+                for_example=", as one example," if len(missing_local_projects) > 1 else "",
+                project=missing_local_projects[0],
+            )
+        )
+
+    resolved_by_target = OrderedDict()  # type: OrderedDict[Target, Resolved[Pylock]]
+    errors_by_target = {}  # type: Dict[Target, Error]
+    with TRACER.timed(
+        "Resolving urls to fetch for {count} requirements from lock {lockfile}".format(
+            count=len(parsed_requirements), lockfile=pylock.render_description()
+        )
+    ):
+        for target in targets.unique_targets():
+            # TODO: XXX: check environments markers.
+            resolve_result = pylock.resolve(
+                target,
+                requirements_to_resolve,
+                _constraints=constraints,
+                _build_configuration=build_configuration,
+                _transitive=transitive,
+                _include_all_matches=include_all_matches,
+                _dependency_configuration=dependency_configuration,
+            )
+            if isinstance(resolve_result, Resolved):
+                resolved_by_target[target] = resolve_result
+            else:
+                errors_by_target[target] = resolve_result
+
+    if errors_by_target:
+        return Error(
+            "Failed to resolve compatible artifacts from {lock} for {count} {targets}:\n"
+            "{errors}".format(
+                lock="lock {source}".format(source=pylock.render_description()),
+                count=len(errors_by_target),
+                targets=pluralize(errors_by_target, "target"),
+                errors="\n".join(
+                    "{index}. {target}: {error}".format(index=index, target=target, error=error)
+                    for index, (target, error) in enumerate(errors_by_target.items(), start=1)
+                ),
+            )
+        )
+
+    return SubsetResult[Pylock](
+        requirements=parsed_requirements,
+        subsets=tuple(
+            Subset[Pylock](target=target, resolved=resolved)
+            for target, resolved in resolved_by_target.items()
+        ),
+    )

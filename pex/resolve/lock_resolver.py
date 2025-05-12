@@ -11,9 +11,9 @@ from pex.pep_427 import InstallableType
 from pex.pip.tool import PackageIndexConfiguration
 from pex.pip.version import PipVersionValue
 from pex.resolve.lock_downloader import LockDownloader
-from pex.resolve.locked_resolve import LocalProjectArtifact
+from pex.resolve.locked_resolve import LocalProjectArtifact, LockConfiguration
 from pex.resolve.lockfile.model import Lockfile
-from pex.resolve.lockfile.subset import subset
+from pex.resolve.lockfile.subset import SubsetResult, subset
 from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolver_configuration import BuildConfiguration, ResolverVersion
 from pex.resolve.resolvers import Resolver, ResolveResult
@@ -69,15 +69,58 @@ def resolve_from_lock(
             dependency_configuration=dependency_configuration,
         )
     )
+    return _resolve_from_subset_result(
+        subset_result,
+        lock_configuration=lock.lock_configuration(),
+        resolver=resolver,
+        indexes=indexes,
+        find_links=find_links,
+        resolver_version=resolver_version,
+        network_configuration=network_configuration,
+        password_entries=password_entries,
+        build_configuration=build_configuration,
+        compile=compile,
+        verify_wheels=verify_wheels,
+        max_parallel_jobs=max_parallel_jobs,
+        pip_version=pip_version,
+        use_pip_config=use_pip_config,
+        extra_pip_requirements=extra_pip_requirements,
+        keyring_provider=keyring_provider,
+        result_type=result_type,
+        dependency_configuration=dependency_configuration,
+    )
+
+
+def _resolve_from_subset_result(
+    subset_result,  # type: SubsetResult
+    lock_configuration,  # type: LockConfiguration
+    resolver,  # type: Resolver
+    indexes=None,  # type: Optional[Sequence[str]]
+    find_links=None,  # type: Optional[Sequence[str]]
+    resolver_version=None,  # type: Optional[ResolverVersion.Value]
+    network_configuration=None,  # type: Optional[NetworkConfiguration]
+    password_entries=(),  # type: Iterable[PasswordEntry]
+    build_configuration=BuildConfiguration(),  # type: BuildConfiguration
+    compile=False,  # type: bool
+    verify_wheels=True,  # type: bool
+    max_parallel_jobs=None,  # type: Optional[int]
+    pip_version=None,  # type: Optional[PipVersionValue]
+    use_pip_config=False,  # type: bool
+    extra_pip_requirements=(),  # type: Tuple[Requirement, ...]
+    keyring_provider=None,  # type: Optional[str]
+    result_type=InstallableType.INSTALLED_WHEEL_CHROOT,  # type: InstallableType.Value
+    dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
+):
+    # type: (...) -> Union[ResolveResult, Error]
+
     downloadable_artifacts_and_targets = tuple(
         (downloadable_artifact, resolved_subset.target)
         for resolved_subset in subset_result.subsets
         for downloadable_artifact in resolved_subset.resolved.downloadable_artifacts
     )
-
     lock_downloader = LockDownloader.create(
         targets=tuple(resolved_subset.target for resolved_subset in subset_result.subsets),
-        lock=lock,
+        lock_configuration=lock_configuration,
         resolver=resolver,
         indexes=indexes,
         find_links=find_links,
@@ -102,7 +145,6 @@ def resolve_from_lock(
         )
         if isinstance(downloaded_artifacts, Error):
             return downloaded_artifacts
-
     with TRACER.timed("Categorizing {} downloaded artifacts".format(len(downloaded_artifacts))):
         build_requests = []
         install_requests = []
@@ -125,7 +167,6 @@ def resolve_from_lock(
                             fingerprint=downloaded_artifact.fingerprint,
                         )
                     )
-
     with TRACER.timed(
         "Building {} artifacts and installing {}".format(
             len(build_requests), len(build_requests) + len(install_requests)

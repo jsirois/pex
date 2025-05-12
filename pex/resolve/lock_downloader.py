@@ -25,10 +25,10 @@ from pex.resolve.locked_resolve import (
     DownloadableArtifact,
     FileArtifact,
     LocalProjectArtifact,
+    LockConfiguration,
     VCSArtifact,
 )
 from pex.resolve.lockfile.download_manager import DownloadedArtifact, DownloadManager
-from pex.resolve.lockfile.model import Lockfile
 from pex.resolve.resolver_configuration import BuildConfiguration, ResolverVersion
 from pex.resolve.resolvers import MAX_PARALLEL_DOWNLOADS, Resolver
 from pex.result import Error, catch
@@ -208,7 +208,7 @@ class LockDownloader(object):
     def create(
         cls,
         targets,  # type: Iterable[Target]
-        lock,  # type: Lockfile
+        lock_configuration,  # type: LockConfiguration
         resolver,  # type: Resolver
         indexes=None,  # type: Optional[Sequence[str]]
         find_links=None,  # type: Optional[Sequence[str]]
@@ -236,7 +236,7 @@ class LockDownloader(object):
                 file_lock_style=file_lock_style,
                 downloader=ArtifactDownloader(
                     resolver=resolver,
-                    lock_configuration=lock.lock_configuration(),
+                    lock_configuration=lock_configuration,
                     target=target,
                     package_index_configuration=PackageIndexConfiguration.create(
                         pip_version=pip_version,
