@@ -123,7 +123,7 @@ def ansicolors_simple():
 
 
 def assert_resolved(
-    result,  # type: Union[Resolved, Error]
+    result,  # type: Union[Resolved[LockedResolve], Error]
     *downloadable_artifacts  # type: DownloadableArtifact
 ):
     # type: (...) -> None
@@ -264,7 +264,7 @@ def ansicolors_exotic():
 
 
 def assert_error(
-    result,  # type: Union[Resolved, Error]
+    result,  # type: Union[Resolved[LockedResolve], Error]
     expected_error_message,  # type: str
 ):
     assert Error(expected_error_message.strip()) == result
@@ -835,15 +835,14 @@ def test_resolved():
             dist_metadatas=(),
             fingerprinter=DevNullFingerprinter(),
         )
-        assert Resolved(
+        assert Resolved[LockedResolve](
             target_specificity=expected_target_specificity,
             downloadable_artifacts=downloadable_artifacts,
             source=locked_resolve,
-        ) == Resolved.create(
+        ) == locked_resolve.create_resolved_artifacts(
             target=target,
             direct_requirements=direct_requirements,
             resolved_artifacts=resolved_artifacts,
-            source=locked_resolve,
         )
 
     # For tag ranks of 1, 2, 1 should rank 100% target specific (best match) and 2 should rank 0%

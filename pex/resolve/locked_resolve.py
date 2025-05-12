@@ -3,6 +3,7 @@
 
 from __future__ import absolute_import, division
 
+import functools
 import itertools
 import os
 from collections import OrderedDict, defaultdict, deque
@@ -30,7 +31,7 @@ from pex.result import Error
 from pex.sorted_tuple import SortedTuple
 from pex.targets import Target
 from pex.tracer import TRACER
-from pex.typing import TYPE_CHECKING
+from pex.typing import TYPE_CHECKING, Generic
 
 if TYPE_CHECKING:
     from typing import (
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         Protocol,
         Set,
         Tuple,
+        TypeVar,
         Union,
     )
 
@@ -488,70 +490,51 @@ class DownloadableArtifact(object):
     satisfied_direct_requirements = attr.ib(default=SortedTuple())  # type: SortedTuple[Requirement]
 
 
-@attr.s(frozen=True)
-class Resolved(object):
-    @classmethod
-    def create(
-        cls,
-        target,  # type: Target
-        direct_requirements,  # type: Iterable[Requirement]
-        resolved_artifacts,  # type: Iterable[_ResolvedArtifact]
-        source,  # type: LockedResolve
-    ):
-        # type: (...) -> Resolved
+if TYPE_CHECKING:
+    Source = TypeVar("Source")
 
-        direct_requirements_by_project_name = defaultdict(
-            list
-        )  # type: DefaultDict[ProjectName, List[Requirement]]
-        for requirement in direct_requirements:
-            direct_requirements_by_project_name[requirement.project_name].append(requirement)
 
-        # N.B.: Lowest rank means highest rank value. I.E.: The 1st tag is the most specific and
-        # the 765th tag is the least specific.
-        largest_rank_value = target.supported_tags.lowest_rank.value
-        smallest_rank_value = TagRank.highest_natural().value
-        rank_span = largest_rank_value - smallest_rank_value
-
-        downloadable_artifacts = []
-        target_specificities = []
-        for resolved_artifact in resolved_artifacts:
-            pin = resolved_artifact.locked_requirement.pin
-            downloadable_artifacts.append(
-                DownloadableArtifact.create(
-                    pin=pin,
-                    artifact=resolved_artifact.artifact,
-                    satisfied_direct_requirements=direct_requirements_by_project_name[
-                        pin.project_name
-                    ],
-                )
-            )
-            target_specificities.append(
-                (rank_span - (resolved_artifact.ranked_artifact.rank.value - smallest_rank_value))
-                / rank_span
-            )
-
-        return cls(
-            target_specificity=(
-                smallest_rank_value
-                if not target_specificities
-                else sum(target_specificities) / len(target_specificities)
-            ),
-            downloadable_artifacts=tuple(downloadable_artifacts),
-            source=source,
-        )
-
+@functools.total_ordering
+class Resolved(Generic["Source"]):
     @classmethod
     def most_specific(cls, resolves):
-        # type: (Iterable[Resolved]) -> Resolved
+        # type: (Iterable[Resolved[Source]]) -> Resolved[Source]
         sorted_resolves = sorted(resolves)
         if len(sorted_resolves) == 0:
             raise ValueError("Given no resolves to pick from.")
         # The most specific has the highest specificity which sorts last.
         return sorted_resolves[-1]
 
-    target_specificity = attr.ib()  # type: float
-    downloadable_artifacts = attr.ib()  # type: Tuple[DownloadableArtifact, ...]
-    source = attr.ib(eq=False)  # type: LockedResolve
+    def __init__(
+        self,
+        target_specificity,  # type: float
+        downloadable_artifacts,  # type: Iterable[DownloadableArtifact]
+        source,  # type: Source
+    ):
+        # type: (...) -> None
+        self.target_specificity = target_specificity
+        self.downloadable_artifacts = tuple(downloadable_artifacts)
+        self.source = source
+
+    def _tup(self):
+        # type: () -> Tuple[float, Tuple[DownloadableArtifact, ...]]
+        return self.target_specificity, self.downloadable_artifacts
+
+    def __eq__(self, other):
+        # type: (Any) -> bool
+        if isinstance(other, Resolved):
+            return self._tup() == other._tup()
+        return NotImplemented
+
+    def __hash__(self):
+        # type: () -> int
+        return hash(self._tup())
+
+    def __lt__(self, other):
+        # type: (Any) -> bool
+        if isinstance(other, Resolved):
+            return self.target_specificity < other.target_specificity
+        return NotImplemented
 
 
 if TYPE_CHECKING:
@@ -650,6 +633,54 @@ class LockedResolve(object):
         # type: () -> str
         return str(self.platform_tag) if self.platform_tag else "universal"
 
+    def create_resolved_artifacts(
+        self,
+        target,  # type: Target
+        direct_requirements,  # type: Iterable[Requirement]
+        resolved_artifacts,  # type: Iterable[_ResolvedArtifact]
+    ):
+        # type: (...) -> Resolved[LockedResolve]
+
+        direct_requirements_by_project_name = defaultdict(
+            list
+        )  # type: DefaultDict[ProjectName, List[Requirement]]
+        for requirement in direct_requirements:
+            direct_requirements_by_project_name[requirement.project_name].append(requirement)
+
+        # N.B.: Lowest rank means highest rank value. I.E.: The 1st tag is the most specific and
+        # the 765th tag is the least specific.
+        largest_rank_value = target.supported_tags.lowest_rank.value
+        smallest_rank_value = TagRank.highest_natural().value
+        rank_span = largest_rank_value - smallest_rank_value
+
+        downloadable_artifacts = []
+        target_specificities = []
+        for resolved_artifact in resolved_artifacts:
+            pin = resolved_artifact.locked_requirement.pin
+            downloadable_artifacts.append(
+                DownloadableArtifact.create(
+                    pin=pin,
+                    artifact=resolved_artifact.artifact,
+                    satisfied_direct_requirements=direct_requirements_by_project_name[
+                        pin.project_name
+                    ],
+                )
+            )
+            target_specificities.append(
+                (rank_span - (resolved_artifact.ranked_artifact.rank.value - smallest_rank_value))
+                / rank_span
+            )
+
+        return Resolved[LockedResolve](
+            target_specificity=(
+                smallest_rank_value
+                if not target_specificities
+                else sum(target_specificities) / len(target_specificities)
+            ),
+            downloadable_artifacts=tuple(downloadable_artifacts),
+            source=self,
+        )
+
     def resolve(
         self,
         target,  # type: Target
@@ -661,7 +692,7 @@ class LockedResolve(object):
         include_all_matches=False,  # type: bool
         dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
     ):
-        # type: (...) -> Union[Resolved, Error]
+        # type: (...) -> Union[Resolved[LockedResolve], Error]
 
         repository = defaultdict(list)  # type: DefaultDict[ProjectName, List[LockedRequirement]]
         for locked_requirement in self.locked_requirements:
@@ -891,9 +922,8 @@ class LockedResolve(object):
                 uniqued_resolved_artifacts.append(resolved_artifact)
                 seen.add(resolved_artifact.ranked_artifact.artifact)
 
-        return Resolved.create(
+        return self.create_resolved_artifacts(
             target=target,
             direct_requirements=requirements,
             resolved_artifacts=uniqued_resolved_artifacts,
-            source=self,
         )
