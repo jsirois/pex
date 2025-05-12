@@ -7,7 +7,7 @@ from pex.common import pluralize
 from pex.dependency_configuration import DependencyConfiguration
 from pex.pep_427 import InstallableType
 from pex.resolve.configured_resolver import ConfiguredResolver
-from pex.resolve.lock_resolver import resolve_from_lock
+from pex.resolve.lock_resolver import resolve_from_pex_lock
 from pex.resolve.pex_repository_resolver import resolve_from_pex
 from pex.resolve.pre_resolved_resolver import resolve_from_dists
 from pex.resolve.requirement_configuration import RequirementConfiguration
@@ -45,7 +45,7 @@ def resolve(
         ):
             pip_configuration = resolver_configuration.pip_configuration
             return try_(
-                resolve_from_lock(
+                resolve_from_pex_lock(
                     targets=targets,
                     lock=lock,
                     resolver=ConfiguredResolver(pip_configuration=pip_configuration),

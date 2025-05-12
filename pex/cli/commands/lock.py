@@ -43,7 +43,7 @@ from pex.requirements import LocalProjectRequirement
 from pex.resolve import project, requirement_options, resolver_options, target_options
 from pex.resolve.config import finalize as finalize_resolve_config
 from pex.resolve.configured_resolver import ConfiguredResolver
-from pex.resolve.lock_resolver import resolve_from_lock
+from pex.resolve.lock_resolver import resolve_from_pex_lock
 from pex.resolve.locked_resolve import (
     LocalProjectArtifact,
     LockConfiguration,
@@ -2217,7 +2217,7 @@ class Lock(OutputMixin, JsonMixin, BuildTimeCommand):
         lock_file = try_(parse_lockfile(self.options, lock_file_path=lock_file_path))
         target = LocalInterpreter.create(sync_target.venv.interpreter)
         resolve_result = try_(
-            resolve_from_lock(
+            resolve_from_pex_lock(
                 targets=Targets.from_target(target),
                 lock=lock_file,
                 resolver=ConfiguredResolver(pip_configuration),

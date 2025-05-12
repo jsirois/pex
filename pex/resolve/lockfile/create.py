@@ -473,7 +473,7 @@ def create(
             "Checking lock can resolve for platforms: {targets}".format(targets=check_targets)
         ):
             try_(
-                lock_resolver.resolve_from_lock(
+                lock_resolver.resolve_from_pex_lock(
                     targets=check_targets,
                     lock=lock,
                     resolver=configured_resolver,

@@ -31,7 +31,7 @@ from pex.resolve.lockfile.subset import Subset, SubsetResult
 from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolved_requirement import Pin
 from pex.resolve.resolver_configuration import BuildConfiguration
-from pex.result import Error, try_
+from pex.result import Error
 from pex.targets import Target, Targets
 from pex.third_party.packaging.markers import Marker
 from pex.toml import InlineTable
@@ -447,7 +447,7 @@ class Pylock(object):
 
 def subset(
     targets,  # type: Targets
-    pylock_toml_path,  # type: str
+    pylock,  # type: Pylock
     requirement_configuration=RequirementConfiguration(),  # type: RequirementConfiguration
     network_configuration=None,  # type: Optional[NetworkConfiguration]
     build_configuration=BuildConfiguration(),  # type: BuildConfiguration
@@ -456,8 +456,6 @@ def subset(
     dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
 ):
     # type: (...) -> Union[SubsetResult[Pylock], Error]
-
-    pylock = try_(Pylock.parse(pylock_toml_path))
 
     parsed_requirements = tuple(requirement_configuration.parse_requirements(network_configuration))
     constraints = tuple(

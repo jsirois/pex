@@ -13,7 +13,10 @@ from pex.pip.version import PipVersionValue
 from pex.resolve.lock_downloader import LockDownloader
 from pex.resolve.locked_resolve import LocalProjectArtifact, LockConfiguration
 from pex.resolve.lockfile.model import Lockfile
-from pex.resolve.lockfile.subset import SubsetResult, subset
+from pex.resolve.lockfile.pep_751 import Pylock
+from pex.resolve.lockfile.pep_751 import subset as subset_pylock
+from pex.resolve.lockfile.subset import SubsetResult
+from pex.resolve.lockfile.subset import subset as subset_pex_lock
 from pex.resolve.requirement_configuration import RequirementConfiguration
 from pex.resolve.resolver_configuration import BuildConfiguration, ResolverVersion
 from pex.resolve.resolvers import Resolver, ResolveResult
@@ -27,7 +30,72 @@ if TYPE_CHECKING:
     from typing import Iterable, Optional, Sequence, Tuple, Union
 
 
-def resolve_from_lock(
+def resolve_from_pylock(
+    targets,  # type: Targets
+    pylock,  # type: Pylock
+    # TODO: XXX: See if this can be concocted locally from whole cloth or if it really needs extra
+    #  options from above.
+    lock_configuration,  # type: LockConfiguration
+    resolver,  # type: Resolver
+    requirements=None,  # type: Optional[Iterable[str]]
+    requirement_files=None,  # type: Optional[Iterable[str]]
+    constraint_files=None,  # type: Optional[Iterable[str]]
+    indexes=None,  # type: Optional[Sequence[str]]
+    find_links=None,  # type: Optional[Sequence[str]]
+    resolver_version=None,  # type: Optional[ResolverVersion.Value]
+    network_configuration=None,  # type: Optional[NetworkConfiguration]
+    password_entries=(),  # type: Iterable[PasswordEntry]
+    build_configuration=BuildConfiguration(),  # type: BuildConfiguration
+    compile=False,  # type: bool
+    transitive=True,  # type: bool
+    verify_wheels=True,  # type: bool
+    max_parallel_jobs=None,  # type: Optional[int]
+    pip_version=None,  # type: Optional[PipVersionValue]
+    use_pip_config=False,  # type: bool
+    extra_pip_requirements=(),  # type: Tuple[Requirement, ...]
+    keyring_provider=None,  # type: Optional[str]
+    result_type=InstallableType.INSTALLED_WHEEL_CHROOT,  # type: InstallableType.Value
+    dependency_configuration=DependencyConfiguration(),  # type: DependencyConfiguration
+):
+    # type: (...) -> Union[ResolveResult, Error]
+    subset_result = try_(
+        subset_pylock(
+            targets=targets,
+            pylock=pylock,
+            requirement_configuration=RequirementConfiguration(
+                requirements=requirements,
+                requirement_files=requirement_files,
+                constraint_files=constraint_files,
+            ),
+            network_configuration=network_configuration,
+            build_configuration=build_configuration,
+            transitive=transitive,
+            dependency_configuration=dependency_configuration,
+        )
+    )
+    return _resolve_from_subset_result(
+        subset_result,
+        lock_configuration=lock_configuration,
+        resolver=resolver,
+        indexes=indexes,
+        find_links=find_links,
+        resolver_version=resolver_version,
+        network_configuration=network_configuration,
+        password_entries=password_entries,
+        build_configuration=build_configuration,
+        compile=compile,
+        verify_wheels=verify_wheels,
+        max_parallel_jobs=max_parallel_jobs,
+        pip_version=pip_version,
+        use_pip_config=use_pip_config,
+        extra_pip_requirements=extra_pip_requirements,
+        keyring_provider=keyring_provider,
+        result_type=result_type,
+        dependency_configuration=dependency_configuration,
+    )
+
+
+def resolve_from_pex_lock(
     targets,  # type: Targets
     lock,  # type: Lockfile
     resolver,  # type: Resolver
@@ -55,7 +123,7 @@ def resolve_from_lock(
 
     dependency_configuration = lock.dependency_configuration().merge(dependency_configuration)
     subset_result = try_(
-        subset(
+        subset_pex_lock(
             targets=targets,
             lock=lock,
             requirement_configuration=RequirementConfiguration(
