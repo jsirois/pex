@@ -6,6 +6,8 @@ from __future__ import absolute_import
 import os
 from collections import OrderedDict, defaultdict
 
+from packaging.specifiers import SpecifierSet
+
 from pex import toml
 from pex.common import pluralize
 from pex.dependency_configuration import DependencyConfiguration
@@ -403,29 +405,98 @@ class Pylock(object):
     @classmethod
     def parse(cls, pylock_toml_path):
         # type: (str) -> Union[Pylock, Error]
+
         lock_data = toml.load(pylock_toml_path)
 
-        lock_version = lock_data.get("lock-version")
-        if not lock_version:
+        lock_version_raw = lock_data.get("lock-version")
+        if not lock_version_raw:
             return Error(
-                "The PEP-751 lock at {pylock} has no lock-version. Pex only supports version 1.0 and "
-                "refuses to guess compatibility."
+                "The PEP-751 lock at {pylock} has no `lock-version`. Pex only supports lock "
+                "version 1.0 and refuses to guess compatibility.".format(pylock=pylock_toml_path)
             )
-        elif lock_version != "1.0":
+        elif lock_version_raw != "1.0":
             return Error(
-                "The PEP-751 lock at {pylock} has lock-version {version}, but Pex only supports "
-                "version 1.0.".format(pylock=pylock_toml_path, version=lock_version)
+                "The PEP-751 lock at {pylock} has `lock-version` {version}, but Pex only supports "
+                "version 1.0.".format(pylock=pylock_toml_path, version=lock_version_raw)
+            )
+        lock_version = Version(lock_version_raw)
+
+        created_by = lock_data.get("created-by")
+        if not created_by:
+            return Error(
+                "The PEP-751 lock at {pylock} has no `created-by` and this is a required "
+                "field.".format(pylock=pylock_toml_path)
             )
 
-        return Error("TODO: XXX: Not Implemented.")
+        packages_data = lock_data.get("packages")
+        if not isinstance(packages_data, list):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. The `packages` field should be a list "
+                "of tables but is a {type} instead.".format(
+                    pylock=pylock_toml_path, type=type(packages_data).__name__
+                )
+            )
+        if packages_data and not all(isinstance(pkg, dict) for pkg in packages_data):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. It has packages defined that are not "
+                "tables.".format(pylock=pylock_toml_path)
+            )
+
+        local_project_requirement_mapping = {}  # type: Dict[str, Requirement]
+        packages = []  # type: List[LockedRequirement]
+        for index, package_data in enumerate(packages_data):
+            # Have:
+            # name
+            # version? (Version("") does not work, need Version("0") at least)
+            # marker?
+            # requires-python? (SpecifierSet() works for missing)
+            # dependencies?
+            #
+            # | vcs:type,url|path,requested-revision?,commit-id,subdirectory?
+            #   commit-id will serve as hash - need to re-write URL to pass to Pip for download.
+            #
+            # | directory:path,editable?,subdirectory?
+            #   no hashes! XXX: Need a knob to allow opt-out of hash checking for these.
+            #
+            # | archive:url|path,hashes,subdirectory?
+            # | sdist:name,url|path,hashes
+            # | wheels:name,url|path,hashes
+
+            # Need:
+            # pin
+            # requires_dists
+            # requires_python
+            #
+            # artifact,additional_artifacts*:
+            # url
+            # fingerprint
+            # verified
+            #
+            # | FileArtifact:filename
+            # | LocalProjectArtifact:directory,editable
+            # | VCSArtifact:vcs,vcs_url,requested_revision,commit_id,subdirectory
+            pass
+
+        return cls(
+            lock_version=lock_version,
+            created_by=created_by,
+            packages=tuple(packages),
+            local_project_requirement_mapping=local_project_requirement_mapping,
+            source=pylock_toml_path,
+        )
 
     lock_version = attr.ib()  # type: Version
     created_by = attr.ib()  # type: str
-    packages = attr.ib()  # type: Tuple[Union[FileArtifact, VCSArtifact, LocalProjectArtifact], ...]
+    packages = attr.ib()  # type: Tuple[LockedRequirement, ...]
+
     local_project_requirement_mapping = attr.ib()  # type: Mapping[str, Requirement]
     source = attr.ib()  # type: str
 
     environments = attr.ib(default=())  # type: Tuple[Marker, ...]
+    requires_python = attr.ib(default=None)  # type: Optional[SpecifierSet]
+    extras = attr.ib(default=())  # type: Tuple[str, ...]
+    dependency_groups = attr.ib(default=())  # type: Tuple[str, ...]
+    default_groups = attr.ib(default=())  # type: Tuple[str, ...]
 
     def resolve(
         self,
