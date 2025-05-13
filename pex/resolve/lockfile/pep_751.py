@@ -425,6 +425,8 @@ class Pylock(object):
     local_project_requirement_mapping = attr.ib()  # type: Mapping[str, Requirement]
     source = attr.ib()  # type: str
 
+    environments = attr.ib(default=())  # type: Tuple[Marker, ...]
+
     def resolve(
         self,
         _target,  # type: Target
@@ -503,7 +505,23 @@ def subset(
         )
     ):
         for target in targets.unique_targets():
-            # TODO: XXX: check environments markers.
+            if pylock.environments and not any(
+                marker.evaluate(target.marker_environment.as_dict())
+                for marker in pylock.environments
+            ):
+                errors_by_target[target] = Error(
+                    "The PEP-751 lock at {pylock} only works in limited environments, none of "
+                    "which support {target}:\n"
+                    "{environments}".format(
+                        pylock=pylock.source,
+                        target=target.render_description(),
+                        environments="\n".join(
+                            "+ {env}".format(env=env) for env in pylock.environments
+                        ),
+                    )
+                )
+                continue
+
             resolve_result = pylock.resolve(
                 target,
                 requirements_to_resolve,
