@@ -113,7 +113,19 @@ class LockConfiguration(object):
 
 @total_ordering
 @attr.s(frozen=True, order=False)
-class Artifact(object):
+class UnFingerprintedArtifact(object):
+    url = attr.ib()  # type: ArtifactURL
+    verified = attr.ib()  # type: bool
+
+    def __lt__(self, other):
+        # type: (Any) -> bool
+        if not isinstance(other, UnFingerprintedArtifact):
+            return NotImplemented
+        return self.url < other.url
+
+
+@attr.s(frozen=True, order=False)
+class Artifact(UnFingerprintedArtifact):
     @classmethod
     def from_artifact_url(
         cls,
@@ -175,15 +187,7 @@ class Artifact(object):
             editable=editable,
         )
 
-    url = attr.ib()  # type: ArtifactURL
     fingerprint = attr.ib()  # type: Fingerprint
-    verified = attr.ib()  # type: bool
-
-    def __lt__(self, other):
-        # type: (Any) -> bool
-        if not isinstance(other, Artifact):
-            return NotImplemented
-        return self.url < other.url
 
 
 @attr.s(frozen=True, order=False)
@@ -219,7 +223,24 @@ class LocalProjectArtifact(Artifact):
 
 
 @attr.s(frozen=True, order=False)
+class UnFingerprintedLocalProjectArtifact(UnFingerprintedArtifact):
+    directory = attr.ib()  # type: str
+    editable = attr.ib(default=False)  # type: bool
+
+    @property
+    def is_source(self):
+        # type: () -> bool
+        return True
+
+
+@attr.s(frozen=True, order=False)
 class VCSArtifact(Artifact):
+    @staticmethod
+    def calculate_subdirectory(artifact_url):
+        # type: (ArtifactURL) -> Optional[str]
+        subdirectories = artifact_url.fragment_parameters.get("subdirectory")
+        return subdirectories[-1] if subdirectories else None
+
     @classmethod
     def from_artifact_url(
         cls,
@@ -238,7 +259,6 @@ class VCSArtifact(Artifact):
             )
 
         vcs_url, _, requested_revision = artifact_url.normalized_url.partition("@")
-        subdirectories = artifact_url.fragment_parameters.get("subdirectory")
         return cls(
             url=artifact_url,
             fingerprint=fingerprint,
@@ -247,7 +267,7 @@ class VCSArtifact(Artifact):
             vcs_url=vcs_url,
             requested_revision=requested_revision or None,
             commit_id=commit_id,
-            subdirectory=subdirectories[-1] if subdirectories else None,
+            subdirectory=cls.calculate_subdirectory(artifact_url),
         )
 
     vcs = attr.ib()  # type: VCS.Value
@@ -262,6 +282,8 @@ class VCSArtifact(Artifact):
 
     def as_unparsed_requirement(self, project_name):
         # type: (ProjectName) -> str
+        # TODO: XXX: Incorporate subdirectory
+
         names = self.url.fragment_parameters.get("egg")
         if names and ProjectName(names[-1]) == project_name:
             # A Pip proprietary VCS requirement.
@@ -269,6 +291,35 @@ class VCSArtifact(Artifact):
         # A PEP-440 direct reference VCS requirement with the project name stripped from earlier
         # processing. See: https://peps.python.org/pep-0440/#direct-references
         return "{project_name} @ {url}".format(project_name=project_name, url=self.url.raw_url)
+
+
+@attr.s(frozen=True, order=False)
+class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
+    vcs = attr.ib()  # type: VCS.Value
+    vcs_url = attr.ib()  # type: str
+    requested_revision = attr.ib(default=None)  # type: Optional[str]
+    commit_id = attr.ib(default=None)  # type: Optional[str]
+    subdirectory = attr.ib(default=None)  # type: Optional[str]
+
+    @property
+    def is_source(self):
+        return True
+
+    def as_unparsed_requirement(self, project_name):
+        # TODO: XXX: Incorporate subdirectory
+
+        # A PEP-440 direct reference VCS requirement with the project name and vcs stripped from
+        # earlier processing. See: https://peps.python.org/pep-0440/#direct-references
+        return "{project_name} @ {vcs}+{url}{ref}".format(
+            project_name=project_name,
+            vcs=self.vcs,
+            url=self.vcs_url,
+            ref=(
+                "@{ref}".format(ref=self.commit_id or self.requested_revision)
+                if self.commit_id or self.requested_revision
+                else ""
+            ),
+        )
 
 
 @attr.s(frozen=True)
@@ -475,7 +526,7 @@ class DownloadableArtifact(object):
     def create(
         cls,
         pin,  # type: Pin
-        artifact,  # type: Union[FileArtifact, LocalProjectArtifact, VCSArtifact]
+        artifact,  # type: Union[FileArtifact, LocalProjectArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact, VCSArtifact]
         satisfied_direct_requirements=(),  # type: Iterable[Requirement]
     ):
         # type: (...) -> DownloadableArtifact
@@ -486,7 +537,9 @@ class DownloadableArtifact(object):
         )
 
     pin = attr.ib()  # type: Pin
-    artifact = attr.ib()  # type: Union[FileArtifact, LocalProjectArtifact, VCSArtifact]
+    artifact = (
+        attr.ib()
+    )  # type: Union[FileArtifact, LocalProjectArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact, VCSArtifact]
     satisfied_direct_requirements = attr.ib(default=SortedTuple())  # type: SortedTuple[Requirement]
 
 

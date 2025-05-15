@@ -13,7 +13,11 @@ from pex.cache.dirs import DownloadDir
 from pex.common import safe_rmtree
 from pex.fs.lock import FileLockStyle
 from pex.pep_503 import ProjectName
-from pex.resolve.locked_resolve import Artifact
+from pex.resolve.locked_resolve import (
+    Artifact,
+    UnFingerprintedLocalProjectArtifact,
+    UnFingerprintedVCSArtifact,
+)
 from pex.result import Error, ResultError, try_
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, Generic
@@ -143,7 +147,10 @@ class DownloadManager(Generic["_A"]):
 
                 # The locking process will have pre-calculated some artifact fingerprints ahead of
                 # time; these will be marked as verified and can be trusted.
-                if not artifact.verified:
+                perform_hash_check = not artifact.verified and not isinstance(
+                    artifact, (UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact)
+                )
+                if perform_hash_check:
                     # For the rest (E.G.: PyPI URLs with embedded fingerprints), we distrust and
                     # establish our own fingerprint. This will mostly be wasted effort since we
                     # share the same hash algorithm as PyPI currently, but it will serve to upgrade
@@ -162,7 +169,7 @@ class DownloadManager(Generic["_A"]):
                         )
                     )
 
-                if not artifact.verified:
+                if perform_hash_check:
                     actual_hash = check.hexdigest()
                     if artifact.fingerprint.hash != actual_hash:
                         raise ResultError(

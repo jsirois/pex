@@ -15,9 +15,13 @@ from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
-from pex.requirements import LocalProjectRequirement, URLRequirement, parse_requirement_string
+from pex.requirements import (
+    LocalProjectRequirement,
+    URLRequirement,
+    VCSScheme,
+    parse_requirement_string,
+)
 from pex.resolve.locked_resolve import (
-    Artifact,
     DownloadableArtifact,
     FileArtifact,
     LocalProjectArtifact,
@@ -25,12 +29,14 @@ from pex.resolve.locked_resolve import (
     LockedResolve,
     Resolved,
     TargetSystem,
+    UnFingerprintedLocalProjectArtifact,
+    UnFingerprintedVCSArtifact,
     VCSArtifact,
 )
 from pex.resolve.lockfile.requires_dist import remove_unused_requires_dist
 from pex.resolve.lockfile.subset import Subset, SubsetResult
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import RANKED_ALGORITHMS, Fingerprint, Pin
+from pex.resolve.resolved_requirement import RANKED_ALGORITHMS, ArtifactURL, Fingerprint, Pin
 from pex.resolve.resolver_configuration import BuildConfiguration
 from pex.result import Error, try_
 from pex.targets import Target, Targets
@@ -211,7 +217,7 @@ def convert(
 
     artifact_subset_by_pin = defaultdict(
         list
-    )  # type: DefaultDict[Pin, List[Union[FileArtifact, LocalProjectArtifact, VCSArtifact]]]
+    )  # type: DefaultDict[Pin, List[Union[FileArtifact, LocalProjectArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact, VCSArtifact]]]
     for downloadable_artifact in subset:
         artifact_subset_by_pin[downloadable_artifact.pin].append(downloadable_artifact.artifact)
 
@@ -244,7 +250,9 @@ def convert(
         package["name"] = locked_requirement.pin.project_name.normalized
 
         artifacts = artifact_subset or list(locked_requirement.iter_artifacts())
-        if len(artifacts) != 1 or not isinstance(artifacts[0], LocalProjectArtifact):
+        if len(artifacts) != 1 or not isinstance(
+            artifacts[0], (LocalProjectArtifact, UnFingerprintedLocalProjectArtifact)
+        ):
             # https://peps.python.org/pep-0751/#packages-version
             # The version MUST NOT be included when it cannot be guaranteed to be consistent with
             # the code used (i.e. when a source tree is used).
@@ -285,19 +293,26 @@ def convert(
             production_assert(
                 artifact_count == 1,
                 "Expected a direct URL requirement to have exactly one artifact but "
-                "{requirement} has {count}.".format(
-                    requirement=archive_requirement, count=artifact_count
-                ),
+                "{requirement} has {count}.",
+                requirement=archive_requirement,
+                count=artifact_count,
             )
-            artifact = artifacts[0]
+            production_assert(
+                isinstance(artifacts[0], FileArtifact),
+                "Packages with an archive should resolve to FileArtifacts but resolved a "
+                "{type} instead.",
+                type=type(artifacts[0]),
+            )
+            archive_artifact = cast(FileArtifact, artifacts[0])
+
             archive = InlineTable()  # type: OrderedDict[str, Any]
 
             # https://peps.python.org/pep-0751/#packages-archive-url
-            archive["url"] = artifact.url.download_url
+            archive["url"] = archive_artifact.url.download_url
 
             # https://peps.python.org/pep-0751/#packages-archive-hashes
             archive["hashes"] = InlineTable.create(
-                (artifact.fingerprint.algorithm, artifact.fingerprint.hash)
+                (archive_artifact.fingerprint.algorithm, archive_artifact.fingerprint.hash)
             )
 
             package["archive"] = archive
@@ -336,7 +351,7 @@ def convert(
                                 url=artifact.url.download_url,
                             ),
                         )
-                elif isinstance(artifact, VCSArtifact):
+                elif isinstance(artifact, (UnFingerprintedVCSArtifact, VCSArtifact)):
                     if not artifact.commit_id:
                         raise ValueError(
                             "Cannot export {url} in a PEP-751 lock.\n"
@@ -371,7 +386,11 @@ def convert(
 
                     package["vcs"] = vcs_artifact
                 else:
-                    production_assert(isinstance(artifact, LocalProjectArtifact))
+                    production_assert(
+                        isinstance(
+                            artifact, (LocalProjectArtifact, UnFingerprintedLocalProjectArtifact)
+                        )
+                    )
                     directory = InlineTable()  # type: OrderedDict[str, Any]
 
                     # https://peps.python.org/pep-0751/#packages-directory-path
@@ -404,7 +423,9 @@ def convert(
 @attr.s(frozen=True)
 class Package(object):
     project_name = attr.ib()  # type: ProjectName
-    artifact = attr.ib()  # type: Union[FileArtifact, LocalProjectArtifact, VCSArtifact]
+    artifact = (
+        attr.ib()
+    )  # type: Union[FileArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact]
     version = attr.ib(default=None)  # type: Optional[Version]
     requires_python = attr.ib(default=None)  # type: Optional[SpecifierSet]
     marker = attr.ib(default=None)  # type: Optional[Marker]
@@ -619,7 +640,9 @@ class PackageParser(object):
         sdist = package_data.get("sdist")
         wheels = package_data.get("wheels")
 
-        artifact = None  # type: Optional[Union[FileArtifact, LocalProjectArtifact, VCSArtifact]]
+        artifact = (
+            None
+        )  # type: Optional[Union[FileArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact]]
         additional_wheels = []  # type: List[FileArtifact]
         if vcs:
             if directory or archive or sdist or wheels:
@@ -633,23 +656,40 @@ class PackageParser(object):
                     "TODO: XXX"
                 )
 
-            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
-            #  API.
-
             # TODO: XXX: Investigate pdm and uv for how they denormalize (or don't)
             #  git+https://github.com/...@master URLs between `type` and `url` and
             #  `requested-revision`.
 
-            url = vcs.get("url")
-            if not url:
-                url = "file://{path}".format(path=vcs["path"])
+            raw_url = vcs.get("url")
+            if not raw_url:
+                raw_url = "file://{path}".format(path=vcs["path"])
+            url = ArtifactURL.parse(raw_url)
+            if not isinstance(url.scheme, VCSScheme):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            vcs_type = url.scheme.vcs
 
+            requested_revision = vcs["requested-revision"]
             commit_id = vcs["commit-id"]
 
-            # TODO: XXX: Face up to this hack?
-            fingerprint = Fingerprint(algorithm="commit-id", hash=commit_id)
+            subdirectory = vcs.get("subdirectory")
+            if subdirectory and not isinstance(subdirectory, str):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
 
-            artifact = Artifact.from_url(url, fingerprint, verified=True, commit_id=commit_id)
+            artifact = UnFingerprintedVCSArtifact(
+                url,
+                verified=True,
+                vcs=vcs_type,
+                vcs_url=raw_url,
+                requested_revision=requested_revision,
+                commit_id=commit_id,
+                subdirectory=subdirectory,
+            )
         elif directory:
             if vcs or archive or sdist or wheels:
                 return Error(
@@ -664,13 +704,16 @@ class PackageParser(object):
                     "TODO: XXX"
                 )
 
-            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
-            #  API.
-
-            url = "file://{path}".format(path=directory["path"])
-
-            # TODO: XXX: Face up to this hack?
-            fingerprint = Fingerprint(algorithm="none", hash="")
+            path = directory["path"]
+            subdirectory = directory.get("subdirectory")
+            if subdirectory is not None:
+                if not isinstance(subdirectory, str):
+                    return Error(
+                        # TODO: XXX
+                        "TODO: XXX"
+                    )
+                path = os.path.join(path, subdirectory)
+            url = ArtifactURL.parse("file://{path}".format(path=path))
 
             editable = directory.get("editable", False)
             if not isinstance(editable, bool):
@@ -679,7 +722,9 @@ class PackageParser(object):
                     "TODO: XXX"
                 )
 
-            artifact = Artifact.from_url(url, fingerprint, verified=True, editable=editable)
+            artifact = UnFingerprintedLocalProjectArtifact(
+                url, verified=True, directory=path, editable=editable
+            )
         elif archive:
             if not isinstance(archive, dict) or not all(isinstance(key, str) for key in archive):
                 return Error(
@@ -687,16 +732,17 @@ class PackageParser(object):
                     "TODO: XXX"
                 )
 
-            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
-            #  API.
+            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in FileArtifact.
 
-            url = archive.get("url")
-            if not url:
-                url = "file://{path}".format(path=archive["path"])
+            raw_url = archive.get("url")
+            if not raw_url:
+                raw_url = "file://{path}".format(path=archive["path"])
+            url = ArtifactURL.parse(raw_url)
 
             fingerprint = try_(self.get_fingerprint(archive["hashes"]))
+            filename = os.path.basename(url.path)
 
-            artifact = Artifact.from_url(url, fingerprint)
+            artifact = FileArtifact(url, verified=False, fingerprint=fingerprint, filename=filename)
         else:
             if vcs or directory or archive:
                 return Error(
@@ -711,13 +757,17 @@ class PackageParser(object):
                         "TODO: XXX"
                     )
 
-                url = sdist.get("url")
-                if not url:
-                    url = "file://{path}".format(path=sdist["path"])
+                raw_url = sdist.get("url")
+                if not raw_url:
+                    raw_url = "file://{path}".format(path=sdist["path"])
+                url = ArtifactURL.parse(raw_url)
 
                 fingerprint = try_(self.get_fingerprint(sdist["hashes"]))
+                filename = os.path.basename(url.path)
 
-                artifact = Artifact.from_url(url, fingerprint)
+                artifact = FileArtifact(
+                    url, verified=False, fingerprint=fingerprint, filename=filename
+                )
             if wheels:
                 for wheel in wheels:
                     if not isinstance(wheel, dict) or not all(
@@ -728,12 +778,17 @@ class PackageParser(object):
                             "TODO: XXX"
                         )
 
-                    url = wheel.get("url")
-                    if not url:
-                        url = "file://{path}".format(path=wheel["path"])
+                    raw_url = wheel.get("url")
+                    if not raw_url:
+                        raw_url = "file://{path}".format(path=wheel["path"])
+                    url = ArtifactURL.parse(raw_url)
 
                     fingerprint = try_(self.get_fingerprint(wheel["hashes"]))
-                    wheel_artifact = Artifact.from_url(url, fingerprint)
+                    filename = os.path.basename(url.path)
+
+                    wheel_artifact = FileArtifact(
+                        url, verified=False, fingerprint=fingerprint, filename=filename
+                    )
                     assert isinstance(wheel_artifact, FileArtifact)
                     if artifact:
                         additional_wheels.append(wheel_artifact)

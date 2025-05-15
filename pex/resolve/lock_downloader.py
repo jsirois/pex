@@ -26,6 +26,8 @@ from pex.resolve.locked_resolve import (
     FileArtifact,
     LocalProjectArtifact,
     LockConfiguration,
+    UnFingerprintedLocalProjectArtifact,
+    UnFingerprintedVCSArtifact,
     VCSArtifact,
 )
 from pex.resolve.lockfile.download_manager import DownloadedArtifact, DownloadManager
@@ -113,7 +115,7 @@ class VCSArtifactDownloadManager(DownloadManager[VCSArtifact]):
 
     def save(
         self,
-        artifact,  # type: VCSArtifact
+        artifact,  # type: Union[UnFingerprintedVCSArtifact, VCSArtifact]
         project_name,  # type: ProjectName
         dest_dir,  # type: str
         digest,  # type: HintedDigest
@@ -160,6 +162,7 @@ class VCSArtifactDownloadManager(DownloadManager[VCSArtifact]):
             archive_path=local_distribution.path,
             vcs=artifact.vcs,
             digest=digest,
+            subdirectory=artifact.subdirectory,
         )
         shutil.move(local_distribution.path, os.path.join(dest_dir, filename))
         return filename
@@ -183,7 +186,7 @@ class LocalProjectDownloadManager(DownloadManager[LocalProjectArtifact]):
 
     def save(
         self,
-        artifact,  # type: LocalProjectArtifact
+        artifact,  # type: Union[LocalProjectArtifact, UnFingerprintedLocalProjectArtifact]
         project_name,  # type: ProjectName
         dest_dir,  # type: str
         digest,  # type: HintedDigest
@@ -305,7 +308,7 @@ class LockDownloader(object):
     def download_artifact(self, downloadable_artifact_and_target):
         # type: (Tuple[DownloadableArtifact, Target]) -> Union[DownloadedArtifact, Error]
         downloadable_artifact, target = downloadable_artifact_and_target
-        if isinstance(downloadable_artifact.artifact, VCSArtifact):
+        if isinstance(downloadable_artifact.artifact, (UnFingerprintedVCSArtifact, VCSArtifact)):
             return catch(
                 self.vcs_download_managers_by_target[target].store,
                 downloadable_artifact.artifact,

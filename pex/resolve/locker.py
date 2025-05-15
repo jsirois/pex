@@ -23,7 +23,7 @@ from pex.pip.log_analyzer import LogAnalyzer
 from pex.pip.vcs import fingerprint_downloaded_vcs_archive
 from pex.pip.version import PipVersionValue
 from pex.requirements import ArchiveScheme, LocalProjectRequirement, VCSRequirement, VCSScheme
-from pex.resolve.locked_resolve import LockConfiguration, LockStyle, TargetSystem
+from pex.resolve.locked_resolve import LockConfiguration, LockStyle, TargetSystem, VCSArtifact
 from pex.resolve.pep_691.fingerprint_service import FingerprintService
 from pex.resolve.pep_691.model import Endpoint
 from pex.resolve.resolved_requirement import (
@@ -384,6 +384,7 @@ class Locker(LogAnalyzer):
                         project_name=str(build_result.pin.project_name),
                         version=str(build_result.pin.version),
                         vcs=artifact_url.scheme.vcs,
+                        subdirectory=VCSArtifact.calculate_subdirectory(artifact_url),
                     )
                     verified = True
                     selected_path = os.path.basename(archive_path)
