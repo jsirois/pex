@@ -374,7 +374,7 @@ def test_lock_all_package_types(
         "version": "1.7",
         "vcs": {
             "type": "git",
-            "url": "git+https://github.com/Anorov/PySocks",
+            "url": "https://github.com/Anorov/PySocks",
             "requested-revision": "1.7.0",
             "commit-id": "91dcdf0fec424b6afe9ceef88de63b72d2f8fcfe",
         },

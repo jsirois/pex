@@ -241,6 +241,12 @@ class VCSArtifact(Artifact):
         subdirectories = artifact_url.fragment_parameters.get("subdirectory")
         return subdirectories[-1] if subdirectories else None
 
+    @staticmethod
+    def split_requested_revision(artifact_url):
+        # type: (ArtifactURL) -> Tuple[str, Optional[str]]
+        vcs_url, _, requested_revision = artifact_url.normalized_url.partition("@")
+        return vcs_url, requested_revision or None
+
     @classmethod
     def from_artifact_url(
         cls,
@@ -258,20 +264,18 @@ class VCSArtifact(Artifact):
                 )
             )
 
-        vcs_url, _, requested_revision = artifact_url.normalized_url.partition("@")
+        _, requested_revision = cls.split_requested_revision(artifact_url)
         return cls(
             url=artifact_url,
             fingerprint=fingerprint,
             verified=verified,
             vcs=artifact_url.scheme.vcs,
-            vcs_url=vcs_url,
-            requested_revision=requested_revision or None,
+            requested_revision=requested_revision,
             commit_id=commit_id,
             subdirectory=cls.calculate_subdirectory(artifact_url),
         )
 
     vcs = attr.ib()  # type: VCS.Value
-    vcs_url = attr.ib()  # type: str
     requested_revision = attr.ib(default=None)  # type: Optional[str]
     commit_id = attr.ib(default=None)  # type: Optional[str]
     subdirectory = attr.ib(default=None)  # type: Optional[str]
@@ -296,7 +300,6 @@ class VCSArtifact(Artifact):
 @attr.s(frozen=True, order=False)
 class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
     vcs = attr.ib()  # type: VCS.Value
-    vcs_url = attr.ib()  # type: str
     requested_revision = attr.ib(default=None)  # type: Optional[str]
     commit_id = attr.ib(default=None)  # type: Optional[str]
     subdirectory = attr.ib(default=None)  # type: Optional[str]
@@ -313,7 +316,7 @@ class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
         return "{project_name} @ {vcs}+{url}{ref}{subdirectory}".format(
             project_name=project_name,
             vcs=self.vcs,
-            url=self.vcs_url,
+            url=self.url.raw_url,
             ref=(
                 "@{ref}".format(ref=self.commit_id or self.requested_revision)
                 if self.commit_id or self.requested_revision
@@ -323,7 +326,7 @@ class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
                 "#subdirectory={subdirectory}".format(subdirectory=self.subdirectory)
                 if self.subdirectory
                 else ""
-            )
+            ),
         )
 
 

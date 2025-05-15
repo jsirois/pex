@@ -8,6 +8,7 @@ from collections import OrderedDict, defaultdict
 
 from pex import toml
 from pex.common import pluralize
+from pex.compatibility import urlparse
 from pex.dependency_configuration import DependencyConfiguration
 from pex.dist_metadata import Requirement
 from pex.exceptions import production_assert
@@ -359,7 +360,8 @@ def convert(
                             "A commit id is required to be resolved for VCS artifacts and none "
                             "was.\n"
                             "This most likely means the lock file was created by Pex older than "
-                            "2.37.0 or that the lock was created using Python 2.7.\n"
+                            "2.37.0, using an old `--pip-version` or that the lock was created "
+                            "using Python 2.7.\n"
                             "You'll need to re-create the lock with a newer Pex or newer Python or "
                             "both to be able to export it in PEP-751 format.".format(
                                 url=artifact.url.raw_url
@@ -371,7 +373,14 @@ def convert(
                     vcs_artifact["type"] = artifact.vcs.value
 
                     # https://peps.python.org/pep-0751/#packages-vcs-url
-                    vcs_artifact["url"] = artifact.vcs_url
+                    vcs_url, _ = VCSArtifact.split_requested_revision(artifact.url)
+                    if isinstance(artifact.url.scheme, VCSScheme):
+                        vcs_scheme = artifact.url.scheme
+                        # Strip the vcs part; e.g.: git+https -> https
+                        vcs_url = urlparse.urlunparse(
+                            urlparse.urlparse(vcs_url)._replace(scheme=vcs_scheme.scheme)
+                        )
+                    vcs_artifact["url"] = vcs_url
 
                     # https://peps.python.org/pep-0751/#packages-vcs-requested-revision
                     if artifact.requested_revision:
@@ -656,10 +665,6 @@ class PackageParser(object):
                     "TODO: XXX"
                 )
 
-            # TODO: XXX: Investigate pdm and uv for how they denormalize (or don't)
-            #  git+https://github.com/...@master URLs between `type` and `url` and
-            #  `requested-revision`.
-
             raw_url = vcs.get("url")
             if not raw_url:
                 raw_url = "file://{path}".format(path=vcs["path"])
@@ -685,7 +690,6 @@ class PackageParser(object):
                 url,
                 verified=True,
                 vcs=vcs_type,
-                vcs_url=raw_url,
                 requested_revision=requested_revision,
                 commit_id=commit_id,
                 subdirectory=subdirectory,
