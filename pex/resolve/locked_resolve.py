@@ -282,12 +282,12 @@ class VCSArtifact(Artifact):
 
     def as_unparsed_requirement(self, project_name):
         # type: (ProjectName) -> str
-        # TODO: XXX: Incorporate subdirectory
 
         names = self.url.fragment_parameters.get("egg")
         if names and ProjectName(names[-1]) == project_name:
             # A Pip proprietary VCS requirement.
             return self.url.raw_url
+
         # A PEP-440 direct reference VCS requirement with the project name stripped from earlier
         # processing. See: https://peps.python.org/pep-0440/#direct-references
         return "{project_name} @ {url}".format(project_name=project_name, url=self.url.raw_url)
