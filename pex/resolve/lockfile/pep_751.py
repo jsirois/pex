@@ -6,8 +6,6 @@ from __future__ import absolute_import
 import os
 from collections import OrderedDict, defaultdict
 
-from packaging.specifiers import SpecifierSet
-
 from pex import toml
 from pex.common import pluralize
 from pex.dependency_configuration import DependencyConfiguration
@@ -19,6 +17,7 @@ from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.requirements import LocalProjectRequirement, URLRequirement, parse_requirement_string
 from pex.resolve.locked_resolve import (
+    Artifact,
     DownloadableArtifact,
     FileArtifact,
     LocalProjectArtifact,
@@ -31,11 +30,12 @@ from pex.resolve.locked_resolve import (
 from pex.resolve.lockfile.requires_dist import remove_unused_requires_dist
 from pex.resolve.lockfile.subset import Subset, SubsetResult
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import Pin
+from pex.resolve.resolved_requirement import RANKED_ALGORITHMS, Fingerprint, Pin
 from pex.resolve.resolver_configuration import BuildConfiguration
-from pex.result import Error
+from pex.result import Error, try_
 from pex.targets import Target, Targets
 from pex.third_party.packaging.markers import Marker
+from pex.third_party.packaging.specifiers import SpecifierSet
 from pex.toml import InlineTable
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING, cast
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
         DefaultDict,
         Dict,
         Iterable,
+        Iterator,
         List,
         Mapping,
         Optional,
@@ -401,6 +402,364 @@ def convert(
 
 
 @attr.s(frozen=True)
+class Package(object):
+    project_name = attr.ib()  # type: ProjectName
+    artifact = attr.ib()  # type: Union[FileArtifact, LocalProjectArtifact, VCSArtifact]
+    version = attr.ib(default=None)  # type: Optional[Version]
+    requires_python = attr.ib(default=None)  # type: Optional[SpecifierSet]
+    marker = attr.ib(default=None)  # type: Optional[Marker]
+    dependencies = attr.ib(default=None)  # type: Optional[Tuple[Package, ...]]
+    additional_wheels = attr.ib(default=())  # type: Tuple[FileArtifact, ...]
+
+
+@attr.s(frozen=True)
+class IndexedPackage(object):
+    index = attr.ib()  # type: int
+    package_data = attr.ib()  # type: Mapping[str, Any]
+
+
+@attr.s(frozen=True)
+class PackageIndex(object):
+    @classmethod
+    def create(
+        cls,
+        packages_data,  # type: Any
+        source,  # type: str
+    ):
+        # type: (...) -> Union[PackageIndex, Error]
+
+        if not isinstance(packages_data, list):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. The `packages` field should be a list "
+                "of tables but is a {type} instead.".format(
+                    pylock=source, type=type(packages_data).__name__
+                )
+            )
+        if packages_data and not all(
+            (isinstance(pkg, dict) and "name" in pkg) for pkg in packages_data
+        ):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. It has packages defined that are not "
+                "tables with at least a `name` field.".format(pylock=source)
+            )
+
+        project_name_by_index = {}
+        packages_data_by_name = defaultdict(
+            list
+        )  # type: DefaultDict[ProjectName, List[IndexedPackage]]
+        for index, package_data in enumerate(packages_data):
+            name = package_data["name"]
+            if not isinstance(name, str):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            project_name = ProjectName(name)
+
+            project_name_by_index[index] = project_name
+            packages_data_by_name[project_name].append(IndexedPackage(index, package_data))
+
+        return cls(
+            project_name_by_index=project_name_by_index,
+            packages_data_by_name={
+                project_name: tuple(packages)
+                for project_name, packages in packages_data_by_name.items()
+            },
+        )
+
+    _project_name_by_index = attr.ib()  # type: Mapping[int, ProjectName]
+    _packages_data_by_name = attr.ib()  # type: Mapping[ProjectName, Tuple[IndexedPackage, ...]]
+
+    def iter_packages(self):
+        # type: () -> Iterator[IndexedPackage]
+        for packages in self._packages_data_by_name.values():
+            for package in packages:
+                yield package
+
+    def package_name(self, index):
+        # type: (int) -> ProjectName
+        return self._project_name_by_index[index]
+
+    def packages(self, project_name):
+        # type: (ProjectName) -> Optional[Tuple[IndexedPackage, ...]]
+        return self._packages_data_by_name.get(project_name)
+
+
+def spec_matches(
+    spec,  # type: Any
+    package_data,  # type: Any
+):
+    # type: (...) -> bool
+
+    if isinstance(spec, dict) and isinstance(package_data, dict):
+        for key, value in spec.items():
+            if not spec_matches(value, package_data.get(key)):
+                return False
+        return True
+
+    if isinstance(spec, list) and isinstance(package_data, list):
+        # TODO: XXX: Should this be a contains check vs a match check? For each contained dict, if
+        #  any, that's how it works currently. For each contained non-dict the match must be exact
+        #  though.
+        if len(spec) != len(package_data):
+            return False
+        for item, package_item in zip(spec, package_data):
+            if not spec_matches(item, package_item):
+                return False
+        return True
+
+    # I have no clue why MyPy can't track this as bool.
+    return cast(bool, spec == package_data)
+
+
+@attr.s
+class PackageParser(object):
+    package_index = attr.ib()  # type: PackageIndex
+    source = attr.ib()  # type: str
+
+    parsed_packages_by_index = attr.ib(factory=dict)  # type: Dict[int, Package]
+
+    @staticmethod
+    def get_fingerprint(hashes):
+        # type: (Any) -> Union[Fingerprint, Error]
+
+        if not isinstance(hashes, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in hashes.items()
+        ):
+            return Error(
+                # TODO: XXX
+                "TODO:XXX"
+            )
+
+        for algorithm in RANKED_ALGORITHMS:
+            hash_value = hashes.get(algorithm)
+            if hash_value:
+                return Fingerprint(algorithm=algorithm, hash=hash_value)
+
+        return Error(
+            # TODO: XXX
+            "TODO:XXX"
+        )
+
+    def parse(self, indexed_package):
+        # type: (IndexedPackage) -> Union[Package, Error]
+
+        index = indexed_package.index
+        package = self.parsed_packages_by_index.get(index)
+        if package:
+            return package
+
+        project_name = self.package_index.package_name(index)
+
+        # TODO: XXX: Parse these:
+        # version?
+        # marker?
+        # requires-python? (SpecifierSet() works for missing)
+        # dependencies*?
+        version = None  # type: Optional[Version]
+        requires_python = SpecifierSet()
+        marker = None  # type: Optional[Marker]
+        dependencies = []  # type: List[Package]
+
+        package_data = indexed_package.package_data
+        dependencies_data = package_data.get("dependencies", None)
+        if dependencies_data and not isinstance(dependencies_data, list):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. The {name} package at index "
+                "{index} should have a `dependencies` field that is a list of tables but is a "
+                "{type} instead.".format(
+                    pylock=self.source,
+                    name=project_name,
+                    index=index,
+                    type=type(dependencies_data).__name__,
+                )
+            )
+        if dependencies_data and not all(
+            (isinstance(dep, dict) and "name" in dep) for dep in dependencies_data
+        ):
+            return Error(
+                "The PEP-751 lock at {pylock} is malformed. The {name} package at index "
+                "{index} has at least one dependency entry that is not a table with at least "
+                "a `name` field.".format(pylock=self.source, name=project_name, index=index)
+            )
+        for dependency_data in dependencies_data or ():
+            dep_name = dependency_data["name"]
+            if not isinstance(dep_name, str):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            package_deps = self.package_index.packages(ProjectName(dep_name))
+            if not package_deps:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            deps = [
+                indexed_package
+                for indexed_package in package_deps
+                if spec_matches(dependency_data, indexed_package.package_data)
+            ]  # type: List[IndexedPackage]
+            if not deps:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            elif len(deps) > 1:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            dependencies.append(try_(self.parse(deps[0])))
+
+        vcs = package_data.get("vcs")
+        directory = package_data.get("directory")
+        archive = package_data.get("archive")
+        sdist = package_data.get("sdist")
+        wheels = package_data.get("wheels")
+
+        artifact = None  # type: Optional[Union[FileArtifact, LocalProjectArtifact, VCSArtifact]]
+        additional_wheels = []  # type: List[FileArtifact]
+        if vcs:
+            if directory or archive or sdist or wheels:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            if not isinstance(vcs, dict) or not all(isinstance(key, str) for key in vcs):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
+            #  API.
+
+            # TODO: XXX: Investigate pdm and uv for how they denormalize (or don't)
+            #  git+https://github.com/...@master URLs between `type` and `url` and
+            #  `requested-revision`.
+
+            url = vcs.get("url")
+            if not url:
+                url = "file://{path}".format(path=vcs["path"])
+
+            commit_id = vcs["commit-id"]
+
+            # TODO: XXX: Face up to this hack?
+            fingerprint = Fingerprint(algorithm="commit-id", hash=commit_id)
+
+            artifact = Artifact.from_url(url, fingerprint, verified=True, commit_id=commit_id)
+        elif directory:
+            if vcs or archive or sdist or wheels:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+            if not isinstance(directory, dict) or not all(
+                isinstance(key, str) for key in directory
+            ):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
+            #  API.
+
+            url = "file://{path}".format(path=directory["path"])
+
+            # TODO: XXX: Face up to this hack?
+            fingerprint = Fingerprint(algorithm="none", hash="")
+
+            editable = directory.get("editable", False)
+            if not isinstance(editable, bool):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            artifact = Artifact.from_url(url, fingerprint, verified=True, editable=editable)
+        elif archive:
+            if not isinstance(archive, dict) or not all(isinstance(key, str) for key in archive):
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            # TODO: XXX: Deal with subdirectory? - no place to plumb currently in Artifact.from_url
+            #  API.
+
+            url = archive.get("url")
+            if not url:
+                url = "file://{path}".format(path=archive["path"])
+
+            fingerprint = try_(self.get_fingerprint(archive["hashes"]))
+
+            artifact = Artifact.from_url(url, fingerprint)
+        else:
+            if vcs or directory or archive:
+                return Error(
+                    # TODO: XXX
+                    "TODO: XXX"
+                )
+
+            if sdist:
+                if not isinstance(sdist, dict) or not all(isinstance(key, str) for key in sdist):
+                    return Error(
+                        # TODO: XXX
+                        "TODO: XXX"
+                    )
+
+                url = sdist.get("url")
+                if not url:
+                    url = "file://{path}".format(path=sdist["path"])
+
+                fingerprint = try_(self.get_fingerprint(sdist["hashes"]))
+
+                artifact = Artifact.from_url(url, fingerprint)
+            if wheels:
+                for wheel in wheels:
+                    if not isinstance(wheel, dict) or not all(
+                        isinstance(key, str) for key in wheel
+                    ):
+                        return Error(
+                            # TODO: XXX
+                            "TODO: XXX"
+                        )
+
+                    url = wheel.get("url")
+                    if not url:
+                        url = "file://{path}".format(path=wheel["path"])
+
+                    fingerprint = try_(self.get_fingerprint(wheel["hashes"]))
+                    wheel_artifact = Artifact.from_url(url, fingerprint)
+                    assert isinstance(wheel_artifact, FileArtifact)
+                    if artifact:
+                        additional_wheels.append(wheel_artifact)
+                    else:
+                        artifact = wheel_artifact
+
+        if artifact is None:
+            return Error(
+                # TODO: XXX
+                "TODO: XXX"
+            )
+
+        package = Package(
+            project_name=project_name,
+            artifact=artifact,
+            version=version,
+            requires_python=requires_python,
+            marker=marker,
+            dependencies=tuple(dependencies) if dependencies_data is not None else None,
+            additional_wheels=tuple(additional_wheels),
+        )
+        self.parsed_packages_by_index[index] = package
+        return package
+
+
+@attr.s(frozen=True)
 class Pylock(object):
     @classmethod
     def parse(cls, pylock_toml_path):
@@ -428,66 +787,47 @@ class Pylock(object):
                 "field.".format(pylock=pylock_toml_path)
             )
 
+        # TODO: XXX: Parse these:
+        # environments = attr.ib(default=())  # type: Tuple[Marker, ...]
+        # requires_python = attr.ib(default=None)  # type: Optional[SpecifierSet]
+        # extras = attr.ib(default=())  # type: Tuple[str, ...]
+        # dependency_groups = attr.ib(default=())  # type: Tuple[str, ...]
+        # default_groups = attr.ib(default=())  # type: Tuple[str, ...]
+
         packages_data = lock_data.get("packages")
-        if not isinstance(packages_data, list):
-            return Error(
-                "The PEP-751 lock at {pylock} is malformed. The `packages` field should be a list "
-                "of tables but is a {type} instead.".format(
-                    pylock=pylock_toml_path, type=type(packages_data).__name__
-                )
-            )
-        if packages_data and not all(isinstance(pkg, dict) for pkg in packages_data):
-            return Error(
-                "The PEP-751 lock at {pylock} is malformed. It has packages defined that are not "
-                "tables.".format(pylock=pylock_toml_path)
-            )
+        package_index = try_(PackageIndex.create(packages_data, source=pylock_toml_path))
+        package_parser = PackageParser(package_index=package_index, source=pylock_toml_path)
 
+        has_dependency_info = False
         local_project_requirement_mapping = {}  # type: Dict[str, Requirement]
-        packages = []  # type: List[LockedRequirement]
-        for index, package_data in enumerate(packages_data):
-            # Have:
-            # name
-            # version? (Version("") does not work, need Version("0") at least)
-            # marker?
-            # requires-python? (SpecifierSet() works for missing)
-            # dependencies?
-            #
-            # | vcs:type,url|path,requested-revision?,commit-id,subdirectory?
-            #   commit-id will serve as hash - need to re-write URL to pass to Pip for download.
-            #
-            # | directory:path,editable?,subdirectory?
-            #   no hashes! XXX: Need a knob to allow opt-out of hash checking for these.
-            #
-            # | archive:url|path,hashes,subdirectory?
-            # | sdist:name,url|path,hashes
-            # | wheels:name,url|path,hashes
-
-            # Need:
-            # pin
-            # requires_dists
-            # requires_python
-            #
-            # artifact,additional_artifacts*:
-            # url
-            # fingerprint
-            # verified
-            #
-            # | FileArtifact:filename
-            # | LocalProjectArtifact:directory,editable
-            # | VCSArtifact:vcs,vcs_url,requested_revision,commit_id,subdirectory
-            pass
+        packages = []  # type: List[Package]
+        for indexed_package in package_index.iter_packages():
+            package = try_(package_parser.parse(indexed_package))
+            has_dependency_info |= package.dependencies is not None
+            if isinstance(package.artifact, LocalProjectArtifact):
+                directory = package.artifact.directory
+                if not os.path.isabs(directory):
+                    directory = os.path.join(os.path.dirname(pylock_toml_path), directory)
+                local_project_requirement_mapping[package.artifact.directory] = Requirement.parse(
+                    "{project_name} @ file://{directory}".format(
+                        project_name=package.project_name, directory=directory
+                    )
+                )
+            packages.append(package)
 
         return cls(
             lock_version=lock_version,
             created_by=created_by,
             packages=tuple(packages),
+            has_dependency_info=has_dependency_info,
             local_project_requirement_mapping=local_project_requirement_mapping,
             source=pylock_toml_path,
         )
 
     lock_version = attr.ib()  # type: Version
     created_by = attr.ib()  # type: str
-    packages = attr.ib()  # type: Tuple[LockedRequirement, ...]
+    packages = attr.ib()  # type: Tuple[Package, ...]
+    has_dependency_info = attr.ib()  # type: bool
 
     local_project_requirement_mapping = attr.ib()  # type: Mapping[str, Requirement]
     source = attr.ib()  # type: str

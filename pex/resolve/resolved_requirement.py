@@ -76,17 +76,17 @@ class Fingerprint(object):
     hash = attr.ib()  # type: str
 
 
+# These ranks prefer the highest digest size and then use alphabetic order for a tie-break.
+RANKED_ALGORITHMS = tuple(
+    sorted(
+        hashlib.algorithms_guaranteed,
+        key=lambda alg: (-hashlib.new(alg).digest_size, alg),
+    )
+)
+
+
 @attr.s(frozen=True)
 class ArtifactURL(object):
-    # These ranks prefer the highest digest size and then use alphabetic order for a tie-break.
-
-    _RANKED_ALGORITHMS = tuple(
-        sorted(
-            hashlib.algorithms_guaranteed,
-            key=lambda alg: (-hashlib.new(alg).digest_size, alg),
-        )
-    )
-
     @classmethod
     def parse(cls, url):
         # type: (str) -> ArtifactURL
@@ -100,7 +100,7 @@ class ArtifactURL(object):
             # Artifact URLs from indexes may contain pre-computed hashes. We isolate those here,
             # centrally, if present.
             # See: https://peps.python.org/pep-0503/#specification
-            for alg in cls._RANKED_ALGORITHMS:
+            for alg in RANKED_ALGORITHMS:
                 hashes = fragment_parameters.pop(alg, None)
                 if not hashes:
                     continue
