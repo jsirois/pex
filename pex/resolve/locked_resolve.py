@@ -306,11 +306,11 @@ class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
         return True
 
     def as_unparsed_requirement(self, project_name):
-        # TODO: XXX: Incorporate subdirectory
+        # type: (ProjectName) -> str
 
         # A PEP-440 direct reference VCS requirement with the project name and vcs stripped from
         # earlier processing. See: https://peps.python.org/pep-0440/#direct-references
-        return "{project_name} @ {vcs}+{url}{ref}".format(
+        return "{project_name} @ {vcs}+{url}{ref}{subdirectory}".format(
             project_name=project_name,
             vcs=self.vcs,
             url=self.vcs_url,
@@ -319,6 +319,11 @@ class UnFingerprintedVCSArtifact(UnFingerprintedArtifact):
                 if self.commit_id or self.requested_revision
                 else ""
             ),
+            subdirectory=(
+                "#subdirectory={subdirectory}".format(subdirectory=self.subdirectory)
+                if self.subdirectory
+                else ""
+            )
         )
 
 
