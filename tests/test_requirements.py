@@ -10,6 +10,7 @@ import pytest
 
 from pex.artifact_url import VCS
 from pex.common import environment_as, safe_open, touch
+from pex.compatibility import urlparse
 from pex.dist_metadata import Requirement
 from pex.fetcher import URLFetcher
 from pex.requirements import (
@@ -179,9 +180,10 @@ def vcs_req(
     extras=None,  # type: Optional[Iterable[str]]
     specifier=None,  # type: Optional[str]
     marker=None,  # type: Optional[str]
-    req_url=None,  # type: Optional[str]
 ):
     # type: (...) -> VCSRequirement
+
+    url_info = urlparse.urlparse(url)
     return VCSRequirement(
         line=DUMMY_LINE,
         vcs=vcs,
@@ -191,7 +193,9 @@ def vcs_req(
             extras=extras,
             specifier=specifier,
             marker=marker,
-            url=req_url or "{vcs}+{url}".format(vcs=vcs.value, url=url),
+            url=url_info._replace(
+                scheme="{vcs}+{scheme}".format(vcs=vcs, scheme=url_info.scheme)
+            ).geturl(),
         ),
     )
 
@@ -403,8 +407,7 @@ def test_parse_requirements_stress(tmpdir):
         vcs_req(
             vcs=VCS.Git,
             project_name="MyProject",
-            url="file:///home/user/projects/MyProject",
-            req_url="git+file:/home/user/projects/MyProject",
+            url="file:///home/user/projects/MyProject#subdirectory=pkg_dir",
         ),
         Constraint(DUMMY_LINE, Requirement.parse("AnotherProject")),
         local_req(
@@ -432,14 +435,14 @@ def test_parse_requirements_stress(tmpdir):
         vcs_req(
             vcs=VCS.Mercurial,
             project_name="AnotherProject",
-            url="http://hg.example.com/MyProject@da39a3ee5e6b",
+            url="http://hg.example.com/MyProject@da39a3ee5e6b#subdirectory=foo/bar",
             extras=["more", "extra"],
             marker="python_version == '3.9.*'",
         ),
         vcs_req(
             vcs=VCS.Mercurial,
             project_name="AnotherProject",
-            url="http://hg.example.com/MyProject@da39a3ee5e6b",
+            url="http://hg.example.com/MyProject@da39a3ee5e6b#subdirectory=foo/bar",
             extras=["more", "extra"],
             marker="python_version == '3.9.*'",
         ),

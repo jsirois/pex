@@ -447,21 +447,16 @@ def _parse_requirement_line(
                     "#egg=<project name>."
                 ),
             )
+        parsed_url_info = parsed_url.url_info._replace(
+            params="",
+            # Omit `egg=project_name` since that gets moved to a `project_name @` suffix in
+            # `parse_requirement_from_project_name_and_specifier`, but retain all other fragment
+            # parameters; notably, subdirectory when present.
+            fragment=parsed_url.fragment(excludes={"egg"}),
+        )
         # There may be whitespace separated markers; so we strip the trailing whitespace
         # used to support those.
-        parsed_scheme = parsed_url.scheme
-        if isinstance(parsed_scheme, VCSScheme):
-            url = (
-                parsed_url.url_info._replace(
-                    scheme=parsed_scheme.scheme,
-                    params="",
-                    fragment=parsed_url.fragment(excludes={"egg"}),
-                )
-                .geturl()
-                .rstrip()
-            )
-        else:
-            url = parsed_url.url_info._replace(params="", fragment="").geturl().rstrip()
+        url = parsed_url_info.geturl().rstrip()
         requirement = parse_requirement_from_project_name_and_specifier(
             project_name,
             extras=extras,
@@ -469,7 +464,9 @@ def _parse_requirement_line(
             marker=marker,
             url=url,
         )
+        parsed_scheme = parsed_url.scheme
         if isinstance(parsed_scheme, VCSScheme):
+            url = parsed_url_info._replace(scheme=parsed_scheme.scheme).geturl()
             return VCSRequirement(line, parsed_scheme.vcs, url, requirement)
         return URLRequirement(line, url, requirement)
 

@@ -1,7 +1,6 @@
 # Copyright 2022 Pex project contributors.
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 
-import itertools
 import os.path
 
 import pytest
@@ -76,8 +75,7 @@ class PipParameters(object):
             "ansicolors @ {vcs_url}".format(vcs_url=VCS_URL), VCS_URL, id="direct-reference"
         ),
         pytest.param(
-            *itertools.repeat("{vcs_url}#egg=ansicolors".format(vcs_url=VCS_URL), 2),
-            id="pip-proprietary"
+            "{vcs_url}#egg=ansicolors".format(vcs_url=VCS_URL), VCS_URL, id="pip-proprietary"
         ),
     ],
 )
@@ -118,14 +116,7 @@ def test_redacted_requirement_handling(
     ).assert_success()
     lockfile = json_codec.load(lock)
     assert (
-        SortedTuple(
-            [
-                attr.evolve(
-                    Requirement.parse("ansicolors"),
-                    url=ArtifactURL.parse(expected_url).normalized_url,
-                )
-            ]
-        )
+        SortedTuple([attr.evolve(Requirement.parse("ansicolors"), url=expected_url)])
         == lockfile.requirements
     )
 

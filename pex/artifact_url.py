@@ -6,9 +6,10 @@ from __future__ import absolute_import
 import codecs
 import hashlib
 import re
+from collections import defaultdict
 
 from pex import hashing
-from pex.compatibility import url_unquote, urlparse
+from pex.compatibility import PY3, url_unquote, url_unquote_plus, urlparse
 from pex.dist_metadata import is_wheel
 from pex.enum import Enum
 from pex.hashing import HashlibHasher
@@ -19,7 +20,10 @@ if TYPE_CHECKING:
     from typing import (
         BinaryIO,
         Container,
+        DefaultDict,
+        Dict,
         Iterable,
+        List,
         Mapping,
         Optional,
         Sequence,
@@ -141,6 +145,23 @@ def split_requested_revision(artifact_url):
     return vcs_url, requested_revision or None
 
 
+def parse_qs(query_string):
+    # type: (str) -> Dict[str, List[str]]
+    if PY3:
+        return urlparse.parse_qs(query_string)
+    else:
+        # N.B.: Python2.7 splits parameters on `&` _and_ `;`. We only want splits on `&`.
+        parameters = defaultdict(list)  # type: DefaultDict[str, List[str]]
+        for parameter in query_string.split("&"):
+            raw_name, sep, raw_value = parameter.partition("=")
+            if not sep:
+                continue
+            name = url_unquote_plus(raw_name)
+            value = url_unquote_plus(raw_value)
+            parameters[name].append(value)
+        return parameters
+
+
 @attr.s(frozen=True)
 class ArtifactURL(object):
     @staticmethod
@@ -179,7 +200,7 @@ class ArtifactURL(object):
         parameters = url_unquote(url_info.params)
 
         fingerprints = []
-        fragment_parameters = urlparse.parse_qs(url_info.fragment)
+        fragment_parameters = parse_qs(url_info.fragment)
         if fragment_parameters:
             # Artifact URLs from indexes may contain pre-computed hashes. We isolate those here,
             # centrally, if present.
