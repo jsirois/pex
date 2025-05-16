@@ -7,6 +7,7 @@ import hashlib
 import os
 from collections import defaultdict
 
+from pex.artifact_url import ArtifactURL, Fingerprint
 from pex.dependency_configuration import DependencyConfiguration
 from pex.dist_metadata import Distribution, Requirement
 from pex.exceptions import production_assert
@@ -21,7 +22,7 @@ from pex.requirements import LocalProjectRequirement
 from pex.resolve.configured_resolver import ConfiguredResolver
 from pex.resolve.locked_resolve import FileArtifact, LockedRequirement, LockedResolve
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import ArtifactURL, Fingerprint, Pin
+from pex.resolve.resolved_requirement import Pin
 from pex.resolve.resolver_configuration import PipConfiguration
 from pex.resolve.resolvers import (
     ResolvedDistribution,

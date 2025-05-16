@@ -7,12 +7,11 @@ import os
 import re
 
 from pex import hashing
+from pex.artifact_url import VCS, Fingerprint
 from pex.common import is_pyc_dir, is_pyc_file, open_zip, temporary_dir
 from pex.hashing import Sha256
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
-from pex.requirements import VCS
-from pex.resolve.resolved_requirement import Fingerprint
 from pex.result import Error, try_
 from pex.tracer import TRACER
 from pex.typing import TYPE_CHECKING

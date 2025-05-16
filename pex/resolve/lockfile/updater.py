@@ -8,6 +8,7 @@ import logging
 from collections import OrderedDict
 from contextlib import contextmanager
 
+from pex.artifact_url import ArtifactURL, Fingerprint
 from pex.common import pluralize
 from pex.dependency_configuration import DependencyConfiguration
 from pex.dist_metadata import Constraint, Requirement
@@ -26,7 +27,6 @@ from pex.resolve.locked_resolve import (
 from pex.resolve.lockfile.create import create
 from pex.resolve.lockfile.model import Lockfile
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import ArtifactURL, Fingerprint
 from pex.resolve.resolver_configuration import PipConfiguration, PipLog, ReposConfiguration
 from pex.result import Error, ResultError, catch, try_
 from pex.sorted_tuple import SortedTuple

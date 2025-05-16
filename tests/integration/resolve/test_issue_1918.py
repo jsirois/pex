@@ -6,13 +6,12 @@ import os.path
 
 import pytest
 
+from pex.artifact_url import VCS, ArtifactURL
 from pex.compatibility import safe_commonpath
 from pex.dist_metadata import Requirement
 from pex.pip.version import PipVersion, PipVersionValue
-from pex.requirements import VCS
 from pex.resolve.locked_resolve import VCSArtifact
 from pex.resolve.lockfile import json_codec
-from pex.resolve.resolved_requirement import ArtifactURL
 from pex.resolve.resolver_configuration import ResolverVersion
 from pex.sorted_tuple import SortedTuple
 from pex.typing import TYPE_CHECKING

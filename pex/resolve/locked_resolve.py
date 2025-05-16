@@ -9,6 +9,7 @@ import os
 from collections import OrderedDict, defaultdict, deque
 from functools import total_ordering
 
+from pex.artifact_url import VCS, ArtifactURL, Fingerprint, VCSScheme
 from pex.common import pluralize
 from pex.dependency_configuration import DependencyConfiguration
 from pex.dist_metadata import DistMetadata, Requirement, is_sdist, is_wheel
@@ -18,14 +19,7 @@ from pex.orderedset import OrderedSet
 from pex.pep_425 import CompatibilityTags, TagRank
 from pex.pep_503 import ProjectName
 from pex.rank import Rank
-from pex.requirements import VCS, VCSScheme
-from pex.resolve.resolved_requirement import (
-    ArtifactURL,
-    Fingerprint,
-    PartialArtifact,
-    Pin,
-    ResolvedRequirement,
-)
+from pex.resolve.resolved_requirement import PartialArtifact, Pin, ResolvedRequirement
 from pex.resolve.resolver_configuration import BuildConfiguration
 from pex.result import Error
 from pex.sorted_tuple import SortedTuple
@@ -116,6 +110,11 @@ class LockConfiguration(object):
 class UnFingerprintedArtifact(object):
     url = attr.ib()  # type: ArtifactURL
     verified = attr.ib()  # type: bool
+
+    @property
+    def subdirectory(self):
+        # type: () -> Optional[str]
+        return self.url.subdirectory
 
     def __lt__(self, other):
         # type: (Any) -> bool
@@ -236,14 +235,10 @@ class UnFingerprintedLocalProjectArtifact(UnFingerprintedArtifact):
 @attr.s(frozen=True, order=False)
 class VCSArtifact(Artifact):
     @staticmethod
-    def calculate_subdirectory(artifact_url):
-        # type: (ArtifactURL) -> Optional[str]
-        subdirectories = artifact_url.fragment_parameters.get("subdirectory")
-        return subdirectories[-1] if subdirectories else None
-
-    @staticmethod
     def split_requested_revision(artifact_url):
         # type: (ArtifactURL) -> Tuple[str, Optional[str]]
+
+        # TODO: XXX: Confirm the normalized_url has the @commit-id on the RHS.
         vcs_url, _, requested_revision = artifact_url.normalized_url.partition("@")
         return vcs_url, requested_revision or None
 
@@ -272,13 +267,11 @@ class VCSArtifact(Artifact):
             vcs=artifact_url.scheme.vcs,
             requested_revision=requested_revision,
             commit_id=commit_id,
-            subdirectory=cls.calculate_subdirectory(artifact_url),
         )
 
     vcs = attr.ib()  # type: VCS.Value
     requested_revision = attr.ib(default=None)  # type: Optional[str]
     commit_id = attr.ib(default=None)  # type: Optional[str]
-    subdirectory = attr.ib(default=None)  # type: Optional[str]
 
     @property
     def is_source(self):

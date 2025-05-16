@@ -7,6 +7,7 @@ import os
 from collections import OrderedDict, defaultdict
 
 from pex import toml
+from pex.artifact_url import RANKED_ALGORITHMS, ArtifactURL, Fingerprint, VCSScheme
 from pex.common import pluralize
 from pex.compatibility import urlparse
 from pex.dependency_configuration import DependencyConfiguration
@@ -16,12 +17,7 @@ from pex.network_configuration import NetworkConfiguration
 from pex.orderedset import OrderedSet
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
-from pex.requirements import (
-    LocalProjectRequirement,
-    URLRequirement,
-    VCSScheme,
-    parse_requirement_string,
-)
+from pex.requirements import LocalProjectRequirement, URLRequirement, parse_requirement_string
 from pex.resolve.locked_resolve import (
     DownloadableArtifact,
     FileArtifact,
@@ -37,7 +33,7 @@ from pex.resolve.locked_resolve import (
 from pex.resolve.lockfile.requires_dist import remove_unused_requires_dist
 from pex.resolve.lockfile.subset import Subset, SubsetResult
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import RANKED_ALGORITHMS, ArtifactURL, Fingerprint, Pin
+from pex.resolve.resolved_requirement import Pin
 from pex.resolve.resolver_configuration import BuildConfiguration
 from pex.result import Error, try_
 from pex.targets import Target, Targets

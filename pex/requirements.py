@@ -8,6 +8,7 @@ import re
 from contextlib import contextmanager
 
 from pex import attrs, dist_metadata, pex_warnings
+from pex.artifact_url import VCS, ArchiveScheme, ArtifactURL, VCSScheme
 from pex.compatibility import url_unquote, urlparse
 from pex.dist_metadata import (
     MetadataError,
@@ -15,12 +16,11 @@ from pex.dist_metadata import (
     Requirement,
     RequirementParseError,
 )
-from pex.enum import Enum
 from pex.fetcher import URLFetcher
 from pex.third_party.packaging.markers import Marker
 from pex.third_party.packaging.specifiers import SpecifierSet
 from pex.third_party.packaging.version import InvalidVersion, Version
-from pex.typing import TYPE_CHECKING, cast
+from pex.typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from typing import Iterable, Iterator, Match, Optional, Text, Tuple, Union
@@ -161,19 +161,6 @@ class URLRequirement(_ParsedRequirement):
     requirement = attr.ib()  # type: Requirement
 
 
-class VCS(Enum["VCS.Value"]):
-    class Value(Enum.Value):
-        pass
-
-    Bazaar = Value("bzr")
-    Git = Value("git")
-    Mercurial = Value("hg")
-    Subversion = Value("svn")
-
-
-VCS.seal()
-
-
 @attr.s(frozen=True)
 class VCSRequirement(_ParsedRequirement):
     """A requirement realized by building a distribution from sources retrieved from a VCS."""
@@ -279,59 +266,6 @@ def _strip_requirement_options(line):
     return editable, re.sub(r"\s--(global-option|install-option|hash).*$", "", processed_text)
 
 
-class ArchiveScheme(Enum["ArchiveScheme.Value"]):
-    class Value(Enum.Value):
-        pass
-
-    FTP = Value("ftp")
-    HTTP = Value("http")
-    HTTPS = Value("https")
-
-
-ArchiveScheme.seal()
-
-
-@attr.s(frozen=True)
-class VCSScheme(object):
-    vcs = attr.ib()  # type: VCS.Value
-    scheme = attr.ib()  # type: str
-
-
-def parse_scheme(scheme):
-    # type: (str) -> Union[str, ArchiveScheme.Value, VCSScheme]
-    match = re.match(
-        r"""
-        ^
-        (?:
-            (?P<archive_scheme>
-                # Archives
-                  ftp
-                | https?
-            )
-            |
-            (?P<vcs_type>
-                # VCSs: https://pip.pypa.io/en/stable/reference/pip_install/#vcs-support
-                  bzr
-                | git
-                | hg
-                | svn
-            )\+(?P<vcs_scheme>.+)
-        )
-        $
-        """,
-        scheme,
-        re.VERBOSE,
-    )
-    if not match:
-        return scheme
-
-    archive_scheme = match.group("archive_scheme")
-    if archive_scheme:
-        return cast(ArchiveScheme.Value, ArchiveScheme.for_value(archive_scheme))
-
-    return VCSScheme(vcs=VCS.for_value(match.group("vcs_type")), scheme=match.group("vcs_scheme"))
-
-
 @attr.s(frozen=True)
 class ProjectNameExtrasAndMarker(object):
     project_name = attr.ib()  # type: Text
@@ -343,20 +277,18 @@ class ProjectNameExtrasAndMarker(object):
         return self.project_name, self.extras, self.marker
 
 
-def _try_parse_fragment_project_name_and_marker(fragment):
-    # type: (Text) -> Optional[ProjectNameExtrasAndMarker]
-    project_requirement = None
-    for part in fragment.split("&"):
-        if part.startswith("egg="):
-            _, project_requirement = part.split("=", 1)
-            break
-    if project_requirement is None:
+def _try_parse_fragment_project_name_and_marker(url):
+    # type: (ArtifactURL) -> Optional[ProjectNameExtrasAndMarker]
+    project_names = url.fragment_parameters.get("egg")
+    if not project_names:
         return None
+
+    project_name = project_names[-1]
     try:
-        req = Requirement.parse(project_requirement)
+        req = Requirement.parse(project_name)
         return ProjectNameExtrasAndMarker(req.name, extras=req.extras, marker=req.marker)
     except (RequirementParseError, ValueError):
-        return ProjectNameExtrasAndMarker(project_requirement)
+        return ProjectNameExtrasAndMarker(project_name)
 
 
 @attr.s(frozen=True)
@@ -482,14 +414,11 @@ def _parse_requirement_line(
 
     editable, processed_text = _strip_requirement_options(line)
     project_name, direct_reference_url = _split_direct_references(processed_text)
-    parsed_url = urlparse.urlparse(direct_reference_url or processed_text)
+    parsed_url = ArtifactURL.parse(direct_reference_url or processed_text)
 
-    parsed_scheme = parse_scheme(parsed_url.scheme)
-    # Handle non local URLs.
-    if isinstance(parsed_scheme, (ArchiveScheme.Value, VCSScheme)):
-        project_name_extras_and_marker = _try_parse_fragment_project_name_and_marker(
-            parsed_url.fragment
-        )
+    # Handle non-local URLs.
+    if isinstance(parsed_url.scheme, (ArchiveScheme.Value, VCSScheme)):
+        project_name_extras_and_marker = _try_parse_fragment_project_name_and_marker(parsed_url)
         project_name, extras, marker = (
             project_name_extras_and_marker.astuple()
             if project_name_extras_and_marker
@@ -508,8 +437,8 @@ def _parse_requirement_line(
         # Pip allows an environment marker after the url which matches the urlparse structure:
         #   scheme://netloc/path;parameters?query#fragment
         # See: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlparse
-        if not marker and parsed_url.params:
-            marker = Marker(parsed_url.params)
+        if not marker and parsed_url.parameters:
+            marker = Marker(parsed_url.parameters)
         if project_name is None:
             raise ParseError(
                 line,
@@ -520,7 +449,19 @@ def _parse_requirement_line(
             )
         # There may be whitespace separated markers; so we strip the trailing whitespace
         # used to support those.
-        url = parsed_url._replace(params="", fragment="").geturl().rstrip()
+        parsed_scheme = parsed_url.scheme
+        if isinstance(parsed_scheme, VCSScheme):
+            url = (
+                parsed_url.url_info._replace(
+                    scheme=parsed_scheme.scheme,
+                    params="",
+                    fragment=parsed_url.fragment(excludes={"egg"}),
+                )
+                .geturl()
+                .rstrip()
+            )
+        else:
+            url = parsed_url.url_info._replace(params="", fragment="").geturl().rstrip()
         requirement = parse_requirement_from_project_name_and_specifier(
             project_name,
             extras=extras,
@@ -529,12 +470,11 @@ def _parse_requirement_line(
             url=url,
         )
         if isinstance(parsed_scheme, VCSScheme):
-            url = urlparse.urlparse(url)._replace(scheme=parsed_scheme.scheme).geturl()
             return VCSRequirement(line, parsed_scheme.vcs, url, requirement)
         return URLRequirement(line, url, requirement)
 
     # Handle local archives and project directories via path or file URL (Pip proprietary).
-    local_requirement = parsed_url._replace(scheme="").geturl()
+    local_requirement = parsed_url.url_info._replace(scheme="").geturl()
     project_name_extras_and_marker = _try_parse_pip_local_formats(
         local_requirement, basepath=basepath
     )

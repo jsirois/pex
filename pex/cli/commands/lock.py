@@ -15,6 +15,7 @@ from operator import attrgetter
 
 from pex import dependency_configuration, pex_warnings
 from pex.argparse import HandleBoolAction
+from pex.artifact_url import Fingerprint
 from pex.build_system import pep_517
 from pex.cli.command import BuildTimeCommand
 from pex.commands.command import JsonMixin, OutputMixin
@@ -70,7 +71,7 @@ from pex.resolve.lockfile.updater import (
 )
 from pex.resolve.path_mappings import PathMappings
 from pex.resolve.requirement_configuration import RequirementConfiguration
-from pex.resolve.resolved_requirement import Fingerprint, Pin
+from pex.resolve.resolved_requirement import Pin
 from pex.resolve.resolver_configuration import LockRepositoryConfiguration, PipConfiguration
 from pex.resolve.resolver_options import parse_lockfile
 from pex.resolve.resolvers import Resolver

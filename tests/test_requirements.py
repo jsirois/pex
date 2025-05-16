@@ -8,12 +8,11 @@ from textwrap import dedent
 
 import pytest
 
+from pex.artifact_url import VCS
 from pex.common import environment_as, safe_open, touch
 from pex.dist_metadata import Requirement
 from pex.fetcher import URLFetcher
 from pex.requirements import (
-    VCS,
-    ArchiveScheme,
     Constraint,
     LocalProjectRequirement,
     LogicalLine,
@@ -22,11 +21,9 @@ from pex.requirements import (
     Source,
     URLRequirement,
     VCSRequirement,
-    VCSScheme,
     parse_requirement_file,
     parse_requirement_from_project_name_and_specifier,
     parse_requirements,
-    parse_scheme,
 )
 from pex.third_party.packaging.markers import Marker
 from pex.typing import TYPE_CHECKING
@@ -591,21 +588,3 @@ def test_parse_requirements_from_url_no_fetcher():
         "Problem resolving requirements file: The source is a url but no fetcher was supplied to "
         "resolve its contents with.".format(EXAMPLE_PYTHON_REQUIREMENTS_URL)
     ) == str(exec_info.value)
-
-
-def test_parse_scheme():
-    # type: () -> None
-
-    assert "not a scheme" == parse_scheme("not a scheme")
-    assert "gopher" == parse_scheme("gopher")
-
-    assert ArchiveScheme.FTP == parse_scheme("ftp")
-    assert ArchiveScheme.HTTP == parse_scheme("http")
-    assert ArchiveScheme.HTTPS == parse_scheme("https")
-
-    assert VCSScheme(VCS.Bazaar, "nfs") == parse_scheme("bzr+nfs")
-    assert VCSScheme(VCS.Git, "file") == parse_scheme("git+file")
-    assert VCSScheme(VCS.Mercurial, "http") == parse_scheme("hg+http")
-    assert VCSScheme(VCS.Subversion, "https") == parse_scheme("svn+https")
-
-    assert "cvs+https" == parse_scheme("cvs+https")

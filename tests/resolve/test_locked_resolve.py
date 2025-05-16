@@ -6,13 +6,13 @@ from textwrap import dedent
 import pytest
 
 from pex import targets
+from pex.artifact_url import VCS, ArtifactURL, Fingerprint
 from pex.dist_metadata import Requirement
 from pex.interpreter import PythonInterpreter
 from pex.pep_425 import CompatibilityTags, TagRank
 from pex.pep_440 import Version
 from pex.pep_503 import ProjectName
 from pex.pep_508 import MarkerEnvironment
-from pex.requirements import VCS
 from pex.resolve import abbreviated_platforms
 from pex.resolve.locked_resolve import (
     Artifact,
@@ -26,7 +26,7 @@ from pex.resolve.locked_resolve import (
     VCSArtifact,
     _ResolvedArtifact,
 )
-from pex.resolve.resolved_requirement import ArtifactURL, Fingerprint, PartialArtifact, Pin
+from pex.resolve.resolved_requirement import PartialArtifact, Pin
 from pex.resolve.resolver_configuration import BuildConfiguration
 from pex.result import Error, try_
 from pex.sorted_tuple import SortedTuple
