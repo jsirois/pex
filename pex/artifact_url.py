@@ -165,7 +165,7 @@ def parse_qs(query_string):
 @attr.s(frozen=True)
 class ArtifactURL(object):
     @staticmethod
-    def _create_fragment(
+    def create_fragment(
         fragment_parameters,  # type: Mapping[str, Iterable[str]]
         excludes=(),  # type: Container[str]
     ):
@@ -221,7 +221,7 @@ class ArtifactURL(object):
         subdirectory = subdirectories[-1] if subdirectories else None
 
         download_url = urlparse.urlunparse(
-            url_info._replace(fragment=cls._create_fragment(fragment_parameters))
+            url_info._replace(fragment=cls.create_fragment(fragment_parameters))
         )
         normalized_url = urlparse.urlunparse(
             url_info._replace(path=path, params="", query="", fragment="")
@@ -252,7 +252,7 @@ class ArtifactURL(object):
 
     def fragment(self, excludes=()):
         # type: (Container[str]) -> str
-        return self._create_fragment(self.fragment_parameters, excludes=excludes)
+        return self.create_fragment(self.fragment_parameters, excludes=excludes)
 
     @property
     def is_wheel(self):
