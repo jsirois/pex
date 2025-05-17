@@ -427,6 +427,142 @@ def convert(
     toml.dump(pylock, output)
 
 
+if TYPE_CHECKING:
+    _T = TypeVar("_T")
+
+
+@attr.s(frozen=True)
+class ParseContext(object):
+    source = attr.ib()  # type: str
+    _prefix = attr.ib(init=False)  # type: str
+    table = attr.ib(factory=dict)  # type: Mapping[str, Any]
+    path = attr.ib(default="")  # type: str
+
+    def __attrs_post_init__(self):
+        prefix = "Failed to parse the PEP-751 lock at {pylock}.".format(pylock=self.source)
+        if self.path:
+            prefix = "{prefix} Error parsing content at {path}.".format(
+                prefix=prefix, path=self.path
+            )
+        object.__setattr__(self, "_prefix", prefix)
+
+    def __bool__(self):
+        # type: () -> bool
+        return len(self.table) > 0
+
+    # N.B.: For Python 2.7.
+    __nonzero__ = __bool__
+
+    def subpath(self, key):
+        # type: (str) -> str
+        return "{path}.{subpath}".format(path=self.path, subpath=key) if self.path else key
+
+    def with_table(
+        self,
+        table,  # type: Mapping[str, Any]
+        path=None,  # type: Optional[str]
+    ):
+        # type: (...) -> ParseContext
+        production_assert(not self.path or path is not None)
+        return ParseContext(
+            source=self.source, table=table, path=self.subpath(path) if path else ""
+        )
+
+    def get_string(
+        self,
+        key,  # type: str
+        default=None,  # type: Optional[str]
+    ):
+        # type: (...) -> str
+        return self.get(key, str, default=default)
+
+    def get_array_of_strings(
+        self,
+        key,  # type: str
+        default=None,  # type: Optional[List[str]]
+    ):
+        # type: (...) -> List[str]
+        value = self.get(key, list, default=default)
+        if not all(isinstance(item, str) for item in value):
+            raise ResultError(
+                self.error(
+                    "Expected {key} to be an arrays of strings.".format(key=self.subpath(key))
+                )
+            )
+        return cast("List[str]", value)
+
+    def get_array_of_tables(
+        self,
+        key,  # type: str
+        default=None,  # type: Optional[List[Dict[str, Any]]]
+    ):
+        # type: (...) -> List[ParseContext]
+        value = self.get(key, list, default=default)
+        if not all(
+            isinstance(item, dict) and all(isinstance(key, str) for key in item) for item in value
+        ):
+            raise ResultError(
+                self.error("Expected {key} to be an array of tables.".format(key=self.subpath(key)))
+            )
+        return [
+            self.with_table(item, path="{key}[{index}]".format(key=key, index=index))
+            for index, item in enumerate(value)
+        ]
+
+    def get_table(
+        self,
+        key,  # type: str
+        default=None,  # type: Optional[Mapping[str, Any]]
+    ):
+        # type: (...) -> ParseContext
+        value = self.get(key, dict, default=default)
+        if not all(isinstance(name, str) for name in value):
+            raise ResultError(
+                self.error(
+                    "Expected {key} to be a table but not all dict keys are strings.".format(
+                        key=self.subpath(key)
+                    )
+                )
+            )
+        return self.with_table(value, path=key)
+
+    def get(
+        self,
+        key,  # type: str
+        item_type,  # type: Type[_T]
+        default=None,  # type: Optional[_T]
+    ):
+        # type: (...) -> _T
+        value = self.table.get(key, None)
+        if value is None:
+            if default is None:
+                raise ResultError(
+                    self.error("A value for {key} is required.".format(key=self.subpath(key)))
+                )
+            return default
+        if not isinstance(value, item_type):
+            raise ResultError(
+                self.error(
+                    "Expected {key} to be a {expected_type} but got a {value_type}.".format(
+                        key=self.subpath(key), expected_type=item_type, value_type=type(value)
+                    )
+                )
+            )
+        return cast("_T", value)
+
+    def error(
+        self,
+        msg,  # type: str
+        err=None,  # type: Optional[Exception]
+    ):
+        # type: (...) -> Error
+        return Error(
+            os.linesep.join(
+                (self._prefix, "{msg}: {err}".format(msg=msg, err=err) if err else msg)
+            ),
+        )
+
+
 @attr.s(frozen=True)
 class Package(object):
     project_name = attr.ib()  # type: ProjectName
@@ -541,8 +677,7 @@ class PackageParser(object):
             if hash_value:
                 return Fingerprint(algorithm=algorithm, hash=hash_value)
 
-        # TODO: XXX
-        return parse_context.error("TODO: FP1")
+        return hashes.error("No hashes from `hashlib.algorithms_guaranteed` are present.")
 
     def parse(self, indexed_package):
         # type: (IndexedPackage) -> Union[Package, Error]
@@ -566,14 +701,18 @@ class PackageParser(object):
 
         dependencies = []  # type: List[Package]
 
-        dep_parse_contexts = parse_context.get_list_of_tables("dependencies", default=[])
+        dep_parse_contexts = parse_context.get_array_of_tables("dependencies", default=[])
         for dep_idx, dep_parse_context in enumerate(dep_parse_contexts):
             dep_name = ProjectName(dep_parse_context.get_string("name"))
 
             package_deps = self.package_index.packages(dep_name)
             if not package_deps:
-                # TODO: XXX
-                return dep_parse_context.error("TODO: PP1")
+                return dep_parse_context.error(
+                    "The {project_name} package depends on {dep_name}, but there is no {dep_name} "
+                    "package in the packages array.".format(
+                        project_name=project_name, dep_name=dep_name
+                    )
+                )
 
             deps = [
                 indexed_package
@@ -581,27 +720,75 @@ class PackageParser(object):
                 if spec_matches(dep_parse_context.table, indexed_package.package_data)
             ]  # type: List[IndexedPackage]
             if not deps:
-                # TODO: XXX
-                return dep_parse_context.error("TODO: PP2")
+                return dep_parse_context.error(
+                    "No matching {dep_name} package could be found for {project_name} "
+                    "dependencies[{dep_idx}].".format(
+                        dep_name=dep_name, project_name=project_name, dep_idx=dep_idx
+                    )
+                )
             elif len(deps) > 1:
-                # TODO: XXX
-                return dep_parse_context.error("TODO: PP3")
+                return dep_parse_context.error(
+                    "More than one package matches {project_name} dependencies[{dep_idx}]:\n"
+                    "{matches}".format(
+                        project_name=project_name,
+                        dep_idx=dep_idx,
+                        matches="\n".join(
+                            "+ packages[{index}]".format(index=dep.index) for dep in deps
+                        ),
+                    )
+                )
             dependencies.append(try_(self.parse(deps[0])))
 
         vcs_parse_context = parse_context.get_table("vcs", default={})
         directory_parse_context = parse_context.get_table("directory", default={})
         archive_parse_context = parse_context.get_table("archive", default={})
         sdist_parse_context = parse_context.get_table("sdist", default={})
-        wheels = parse_context.get_list_of_tables("wheels", default=[])
+        wheels = parse_context.get_array_of_tables("wheels", default=[])
+
+        def check_mutually_exclusive(
+            key,  # type: str
+            others,  # type: Iterable[Union[ParseContext, List[ParseContext]]]
+        ):
+            # type: (...) -> None
+            other_artifacts = [other for other in others if other]
+            if not other_artifacts:
+                return
+            raise ResultError(
+                parse_context.error(
+                    "{lead} mutually exclusive with {key}:\n"
+                    "{other_artifacts}".format(
+                        lead="This artifact is"
+                        if len(other_artifacts) == 1
+                        else "These artifacts are",
+                        key=key,
+                        other_artifacts="\n".join(
+                            "+ {path}".format(
+                                path=(
+                                    other_artifact.path
+                                    if isinstance(other_artifact, ParseContext)
+                                    else parse_context.subpath("wheels")
+                                )
+                            )
+                            for other_artifact in other_artifacts
+                        ),
+                    )
+                )
+            )
 
         artifact = (
             None
         )  # type: Optional[Union[FileArtifact, UnFingerprintedLocalProjectArtifact, UnFingerprintedVCSArtifact]]
         additional_wheels = []  # type: List[FileArtifact]
         if vcs_parse_context:
-            if directory_parse_context or archive_parse_context or sdist_parse_context or wheels:
-                # TODO: XXX
-                return parse_context.error("TODO: VCS1")
+            check_mutually_exclusive(
+                key=vcs_parse_context.path,
+                others=(
+                    directory_parse_context,
+                    archive_parse_context,
+                    sdist_parse_context,
+                    wheels,
+                ),
+            )
 
             url = ArtifactURL.parse(
                 vcs_parse_context.get_string("url")
@@ -613,24 +800,29 @@ class PackageParser(object):
             except ValueError as e:
                 return vcs_parse_context.error("Invalid vcs `type`.", err=e)
 
-            url_replacements = {
-                "scheme": "{vcs}+{scheme}".format(vcs=vcs_type, scheme=url.url_info.scheme)
-            }
+            commit_id = vcs_parse_context.get_string("commit-id")
+
+            # TODO: XXX: Get rid of the url replacement if not necessary - probably not necessary
+            #  since UnFingerprintedVCSArtifact.as_unparsed_requirement is used to setup download
+            #  when using lock.
+            # url_replacements = {
+            #     "scheme": "{vcs}+{scheme}".format(vcs=vcs_type, scheme=url.url_info.scheme),
+            #     "path": "{path}@{commit_id}".format(path=url.url_info.path, commit_id=commit_id),
+            # }
 
             subdirectory = vcs_parse_context.get_string("subdirectory", default="") or None
-            if subdirectory:
-                vcs_fragment_parameters = defaultdict(list)  # type: DefaultDict[str, List[str]]
-                vcs_fragment_parameters.update(
-                    (name, list(values)) for name, values in url.fragment_parameters.items()
-                )
-                vcs_fragment_parameters["subdirectory"].append(subdirectory)
-                url_replacements["fragment"] = ArtifactURL.create_fragment(vcs_fragment_parameters)
-            url = ArtifactURL.parse(url.url_info._replace(**url_replacements).geturl())
+            # if subdirectory:
+            #     vcs_fragment_parameters = defaultdict(list)  # type: DefaultDict[str, List[str]]
+            #     vcs_fragment_parameters.update(
+            #         (name, list(values)) for name, values in url.fragment_parameters.items()
+            #     )
+            #     vcs_fragment_parameters["subdirectory"].append(subdirectory)
+            #     url_replacements["fragment"] = ArtifactURL.create_fragment(vcs_fragment_parameters)
+            # url = ArtifactURL.parse(url.url_info._replace(**url_replacements).geturl())
 
             requested_revision = (
                 vcs_parse_context.get_string("requested-revision", default="") or None
             )
-            commit_id = vcs_parse_context.get_string("commit-id")
 
             artifact = UnFingerprintedVCSArtifact(
                 url,
@@ -641,9 +833,10 @@ class PackageParser(object):
                 subdirectory=subdirectory,
             )
         elif directory_parse_context:
-            if vcs_parse_context or archive_parse_context or sdist_parse_context or wheels:
-                # TODO: XXX
-                return parse_context.error("TODO: DIR1")
+            check_mutually_exclusive(
+                key=directory_parse_context.path,
+                others=(vcs_parse_context, archive_parse_context, sdist_parse_context, wheels),
+            )
 
             path = directory_parse_context.get_string("path")
             subdirectory = directory_parse_context.get_string("subdirectory", default="") or None
@@ -680,9 +873,12 @@ class PackageParser(object):
             # TODO: XXX: Pass subdirectory down - no place to plumb currently in FileArtifact.
             artifact = FileArtifact(url, verified=False, fingerprint=fingerprint, filename=filename)
         else:
-            if vcs_parse_context or directory_parse_context or archive_parse_context:
-                # TODO: XXX
-                return parse_context.error("TODO: SDIST_OR_WHEEL1")
+            check_mutually_exclusive(
+                key="{sdist} and {wheels}".format(
+                    sdist=parse_context.subpath("sdist"), wheels=parse_context.subpath("wheels")
+                ),
+                others=(vcs_parse_context, directory_parse_context, archive_parse_context),
+            )
 
             if sdist_parse_context:
                 url = ArtifactURL.parse(
@@ -716,7 +912,6 @@ class PackageParser(object):
                         artifact = wheel_artifact
 
         if artifact is None:
-            # TODO: XXX
             return parse_context.error("TODO: XXX")
 
         package = Package(
@@ -730,132 +925,6 @@ class PackageParser(object):
         )
         self.parsed_packages_by_index[index] = package
         return package
-
-
-if TYPE_CHECKING:
-    _T = TypeVar("_T")
-
-
-@attr.s(frozen=True)
-class ParseContext(object):
-    source = attr.ib()  # type: str
-    _prefix = attr.ib(init=False)  # type: str
-    table = attr.ib(factory=dict)  # type: Mapping[str, Any]
-    _path = attr.ib(default=None)  # type: Optional[str]
-
-    def __attrs_post_init__(self):
-        prefix = "Failed to parse the PEP-751 lock at {pylock}.".format(pylock=self.source)
-        if self._path:
-            prefix = "{prefix} Error parsing content at {path}.".format(
-                prefix=prefix, path=self._path
-            )
-        object.__setattr__(self, "_prefix", prefix)
-
-    def __bool__(self):
-        # type: () -> bool
-        return len(self.table) > 0
-
-    # N.B.: For Python 2.7.
-    __nonzero__ = __bool__
-
-    def subpath(self, key):
-        # type: (str) -> str
-        return "{path}.{subpath}".format(path=self._path, subpath=key) if self._path else key
-
-    def with_table(
-        self,
-        table,  # type: Mapping[str, Any]
-        path=None,  # type: Optional[str]
-    ):
-        # type: (...) -> ParseContext
-        production_assert(self._path is None or path is not None)
-        return ParseContext(
-            source=self.source, table=table, path=self.subpath(path) if path else None
-        )
-
-    def get_string(
-        self,
-        key,  # type: str
-        error_msg=None,  # type: Optional[str]
-        default=None,  # type: Optional[str]
-    ):
-        # type: (...) -> str
-        return self.get(key, str, error_msg=error_msg, default=default)
-
-    def get_list_of_strings(
-        self,
-        key,  # type: str
-        error_msg=None,  # type: Optional[str]
-        default=None,  # type: Optional[List[str]]
-    ):
-        # type: (...) -> List[str]
-        value = self.get(key, list, error_msg=error_msg, default=default)
-        if not all(isinstance(item, str) for item in value):
-            # TODO: XXX
-            raise ResultError(self.error("TODO: PC-LOS1"))
-        return cast("List[str]", value)
-
-    def get_list_of_tables(
-        self,
-        key,  # type: str
-        error_msg=None,  # type: Optional[str]
-        default=None,  # type: Optional[List[Dict[str, Any]]]
-    ):
-        # type: (...) -> List[ParseContext]
-        value = self.get(key, list, error_msg=error_msg, default=default)
-        if not all(
-            isinstance(item, dict) and all(isinstance(key, str) for key in item) for item in value
-        ):
-            # TODO: XXX
-            raise ResultError(self.error("TODO: PC-LOT1"))
-        return [
-            self.with_table(item, path="{key}[{index}]".format(key=key, index=index))
-            for index, item in enumerate(value)
-        ]
-
-    def get_table(
-        self,
-        key,  # type: str
-        error_msg=None,  # type: Optional[str]
-        default=None,  # type: Optional[Mapping[str, Any]]
-    ):
-        # type: (...) -> ParseContext
-        value = self.get(key, dict, error_msg=error_msg, default=default)
-        if not all(isinstance(name, str) for name in value):
-            # TODO: XXX
-            raise ResultError(self.error("TODO: PC-GT1"))
-        return self.with_table(value, path=key)
-
-    def get(
-        self,
-        key,  # type: str
-        item_type,  # type: Type[_T]
-        error_msg=None,  # type: Optional[str]
-        default=None,  # type: Optional[_T]
-    ):
-        # type: (...) -> _T
-        value = self.table.get(key, None)
-        if value is None:
-            if default is None:
-                raise ResultError(
-                    self.error("A value for {key} is required.".format(key=self.subpath(key)))
-                )
-            return default
-        if not isinstance(value, item_type):
-            raise ResultError(self.error("TODO: PC-G1"))
-        return cast("_T", value)
-
-    def error(
-        self,
-        msg,  # type: str
-        err=None,  # type: Optional[Exception]
-    ):
-        # type: (...) -> Error
-        return Error(
-            os.linesep.join(
-                (self._prefix, "{msg}: {err}".format(msg=msg, err=err) if err else msg)
-            ),
-        )
 
 
 @attr.s(frozen=True)
@@ -884,17 +953,17 @@ class Pylock(object):
             )
 
         environments = tuple(
-            map(Marker, parse_context.get_list_of_strings("environments", default=[]))
+            map(Marker, parse_context.get_array_of_strings("environments", default=[]))
         )
         requires_python = SpecifierSet(parse_context.get_string("requires-python", default=""))
-        extras = tuple(parse_context.get_list_of_strings("extras", default=[]))
+        extras = tuple(parse_context.get_array_of_strings("extras", default=[]))
         dependency_groups = tuple(
-            parse_context.get_list_of_strings("dependency-groups", default=[])
+            parse_context.get_array_of_strings("dependency-groups", default=[])
         )
-        default_groups = tuple(parse_context.get_list_of_strings("default-groups", default=[]))
+        default_groups = tuple(parse_context.get_array_of_strings("default-groups", default=[]))
         created_by = parse_context.get_string("created-by")
 
-        packages_data = parse_context.get_list_of_tables("packages", default=[])
+        packages_data = parse_context.get_array_of_tables("packages", default=[])
         package_index = PackageIndex.create(packages_data)
         package_parser = PackageParser(package_index=package_index, source=pylock_toml_path)
 
