@@ -4,12 +4,12 @@
 from __future__ import absolute_import
 
 import itertools
-import json
 import os
 
 from pex.auth import PasswordEntry
 from pex.compatibility import string
 from pex.dist_metadata import Requirement, RequirementParseError
+from pex.exceptions import production_assert, reportable_unexpected_error_msg
 from pex.pep_503 import ProjectName
 from pex.resolve.target_system import MarkerEnv
 from pex.third_party.packaging.markers import InvalidMarker, Marker
@@ -116,8 +116,6 @@ class Repo(object):
     @classmethod
     def from_dict(cls, data):
         # type: (Dict[str, Any]) -> Repo
-
-        # TODO: XXX: Error handling
         return cls(
             location=data["location"], scopes=tuple(Scope.parse(scope) for scope in data["scopes"])
         )
@@ -149,26 +147,21 @@ class PackageRepositories(object):
     def from_dict(cls, data):
         # type: (Dict[str, Any]) -> PackageRepositories
 
-        # TODO: XXX: Error handling
         markers = data.get("markers")
         universal_markers_data = data.get("universal_markers")
-        if not bool(markers) ^ bool(universal_markers_data):
-            # TODO: XXX
-            raise ValueError("TODO: XXX: data={data}".format(data=json.dumps(data, indent=2)))
+        production_assert(bool(markers) ^ bool(universal_markers_data))
         if markers:
             if not isinstance(markers, dict) or not all(
                 isinstance(key, string) and isinstance(value, string)
                 for key, value in markers.items()
             ):
-                raise ValueError(
-                    "TODO: XXX: markers={markers}".format(markers=json.dumps(markers, indent=2))
-                )
+                raise AssertionError(reportable_unexpected_error_msg())
             target_env = markers  # type: Union[Dict[str, str], MarkerEnv]
         else:
             if not isinstance(universal_markers_data, dict) or not all(
                 isinstance(key, string) for key in universal_markers_data
             ):
-                raise ValueError("TODO: XXX")
+                raise AssertionError(reportable_unexpected_error_msg())
             target_env = MarkerEnv.from_dict(universal_markers_data)
 
         return cls(
@@ -191,9 +184,9 @@ class PackageRepositories(object):
         # type: () -> Dict[str, Any]
         return {
             "markers": self.target_env if isinstance(self.target_env, dict) else None,
-            "universal_markers": self.target_env.as_dict()
-            if isinstance(self.target_env, MarkerEnv)
-            else None,
+            "universal_markers": (
+                self.target_env.as_dict() if isinstance(self.target_env, MarkerEnv) else None
+            ),
             "global_indexes": list(self.global_indexes),
             "global_find_links": list(self.global_find_links),
             "scoped_indexes": [index.as_dict() for index in self.scoped_indexes],

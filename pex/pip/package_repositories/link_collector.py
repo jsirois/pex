@@ -53,7 +53,7 @@ def patch():
             )
 
         kwargs = {}
-        if patch_context.pip_version > PipVersion.v22_2_2:
+        if patch_context.pip_version >= PipVersion.v22_3:
             kwargs["no_index"] = link_collector.search_scope.no_index
 
         orig_search_scope = link_collector.search_scope
